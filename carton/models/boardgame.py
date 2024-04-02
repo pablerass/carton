@@ -15,9 +15,10 @@ class BoardGame:
     min_age: MinAge
     players: PlayersRange
     play_time: PlayTimeRange
+    # TODO: Add published year
 
     def __post_init__(self):
-        # TUNE: Not sure at all if this is a good idea
+        # TUNE: This is not a good idea
         self.designer.add_game(self)
 
 
