@@ -11,6 +11,7 @@ from .params import MinAge, PlayersRange, PlayTimeRange
 class BoardGame:
     name: str
     _: KW_ONLY
+    # TODO: Allow múltiple designer
     designer: Designer
     min_age: MinAge
     players: PlayersRange

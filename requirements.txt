@@ -2,3 +2,4 @@ fastapi
 aiohttp
 argparse
 pydantic
+aiometer
