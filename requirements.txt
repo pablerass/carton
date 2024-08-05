@@ -1,5 +1,6 @@
 fastapi
 aiohttp
 argparse
+sqlmodel
 pydantic
 aiometer

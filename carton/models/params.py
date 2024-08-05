@@ -1,34 +1,37 @@
 from __future__ import annotations
 
-from dataclasses import KW_ONLY, field
-from pydantic import PositiveInt, GetCoreSchemaHandler
-from pydantic.dataclasses import dataclass
+from pydantic import BaseModel, PositiveInt, GetCoreSchemaHandler
 from pydantic_core import core_schema
 from typing import Optional, Type, Any
+from sqlalchemy import TypeDecorator, JSON
 
 
-@dataclass(frozen=True)
-class _PositiveRange:
-    lower: PositiveInt
-    upper: PositiveInt
-    _: KW_ONLY
+# TODO: Make attribute names optional
+# TODO: Convert Any to generic type and add common interval methods
+class Interval(BaseModel):
+    lower: Any
+    upper: Any
     unit: Optional[str] = None
 
     def __str__(self):
-        range = f'{self.lower}-{self.upper}'
+        interval = f'{self.lower}-{self.upper}'
         if self.lower == self.upper:
-            range = self.lower
-        return f"{range}{' ' + self.unit if self.unit is not None else ''}"
+            interval = self.lower
+        return f"{interval}{' ' + self.unit if self.unit is not None else ''}"
 
 
-@dataclass(frozen=True)
-class PlayersRange(_PositiveRange):
-    unit: str = field(repr=False, default='players')
+class PositiveInterval(Interval):
+    lower: PositiveInt
+    upper: PositiveInt
+    unit: Optional[str] = None
 
 
-@dataclass(frozen=True)
-class PlayTimeRange(_PositiveRange):
-    unit: str = field(repr=False, default='mins')
+class Players(PositiveInterval):
+    unit: str = 'players'
+
+
+class PlayTime(PositiveInterval):
+    unit: str = 'mins'
 
 
 class MinAge(PositiveInt):
@@ -59,3 +62,21 @@ class MinAge(PositiveInt):
     @staticmethod
     def _serialize(value: MinAge) -> str:
         return value
+
+
+# TODO: Make JSONInterval the default sa_type for all intervals
+# TODO: Move this class to another place related with model persistence
+class JSONInterval(TypeDecorator):
+    impl = JSON
+
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            return {'lower': value.lower, 'upper': value.upper, 'unit': value.unit}
+        return None
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            return PositiveInterval(lower=value['lower'], upper=value['upper'], unit=value['unit'])
+        return None

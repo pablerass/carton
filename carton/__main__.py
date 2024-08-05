@@ -34,6 +34,9 @@ async def main(args=None):
         logging_format = '[%(asctime)s] %(levelname)s - %(name)s - %(message)s'
     logging.basicConfig(stream=sys.stderr, format=logging_format,
                         level=logging.WARN - args.verbose * 10)
+    if args.verbose < 4:
+        logging.getLogger('httpcore').propagate = False
+        logging.getLogger('httpx').propagate = False
 
     trello = TrelloProvider(args.trello_api_key, args.trello_api_token)
     bgg = BggProvider()
@@ -42,8 +45,8 @@ async def main(args=None):
         await trello.list_cards('5fe62b9d8934f35ed591137a')]
     boardgames = await aiometer.run_all(
         [partial(bgg.boardgame_by_name, name) for name in boardgame_names[:3]],
-        max_at_once=5,
-        max_per_second=3
+        max_at_once=8,
+        max_per_second=5
     )
     print(boardgames)
 

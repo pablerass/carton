@@ -1,51 +1,35 @@
-from __future__ import annotations
+# from __future__ import annotations
+# annotations are not properly supported in current SQLAlchemy and Pydantic versions
+# https://github.com/tiangolo/sqlmodel/issues/196
 
-from dataclasses import KW_ONLY
-from pydantic import PositiveInt
-from pydantic.dataclasses import dataclass
+from sqlmodel import Field, SQLModel, Relationship
 
-from .params import MinAge, PlayersRange, PlayTimeRange
+from .params import MinAge, Players, PlayTime, JSONInterval
 
 
-@dataclass(frozen=True)
-class BoardGame:
+class BoardGameDesignerLink(SQLModel, table=True):
+    board_game_id: int | None = Field(default=None, foreign_key="boardgame.id", primary_key=True)
+    dasigner_id: int | None = Field(default=None, foreign_key="designer.id", primary_key=True)
+
+
+class BoardGame(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
     name: str
-    _: KW_ONLY
-    # TODO: Allow múltiple designer
-    designer: Designer
+    designers: list['Designer'] = Relationship(back_populates="board_games", link_model=BoardGameDesignerLink)
     min_age: MinAge
-    players: PlayersRange
-    play_time: PlayTimeRange
+    players: Players = Field(sa_type=JSONInterval)
+    play_time: PlayTime = Field(sa_type=JSONInterval)
     # TODO: Add published year
 
-    def __post_init__(self):
-        # TUNE: This is not a good idea
-        self.designer.add_game(self)
+
+# class BGGGame(BoardGame):
+#     id: PositiveInt
+#     community_min_age: MinAge = None
+#     community_players: PlayersRange = None
+#     community_best_players: PlayersRange = None
 
 
-@dataclass(frozen=True)
-class BGGGame(BoardGame):
-    id: PositiveInt
-    community_min_age: MinAge = None
-    community_players: PlayersRange = None
-    community_best_players: PlayersRange = None
-
-
-@dataclass
-class Designer:
+class Designer(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
     name: str
-    _: KW_ONLY
-    games: set[BoardGame] = None
-
-    def __post_init__(self):
-        if self.games is None:
-            self.games = set()
-
-    def __eq__(self, other):
-        return self.name == other.name
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def add_game(self, game: BoardGame):
-        self.games |= set([game])
+    board_games: list[BoardGame] = Relationship(back_populates="designers", link_model=BoardGameDesignerLink)

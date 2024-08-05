@@ -48,8 +48,7 @@ class TrelloProvider:
     async def member(self, id: str = None) -> dict:
         member = _member_or_me(id)
         response = await self._client.get(f"{self.api_url}/members/{member}")
-        from pprint import pprint
-        pprint(response.json())
+        return response.json()
 
     async def boards(self, member: str = None) -> list[dict]:
         member = _member_or_me(member)
