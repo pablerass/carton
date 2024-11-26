@@ -5,6 +5,7 @@ import xmltodict
 
 from collections import namedtuple
 from functools import partial
+from pydantic import ValidationError
 
 from ..models.boardgame import BGGGame, BGGDesigner
 from ..models.params import Players, PlayTime, MinAge, Year
@@ -47,8 +48,7 @@ class BggProvider:
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{self._api.xml}/boardgame/{id}")
 
-            # TUNE: Remove of format better this log line
-            logger.debug(f"Found {response.text} games for name {id}")
+            logger.debug(f"Found game {id}")
             try:
                 boardgame_response = xmltodict.parse(response.text)['boardgames']['boardgame']
 
@@ -71,27 +71,72 @@ class BggProvider:
                     choice_1_key='@numplayers', votes_1_key='result',
                     choice_2_key='@value', votes_2_key='@numvotes')
 
+                min_age = MinAge(boardgame_response['age'])
+                # TUNE: It would be better to execute MinAge validation
+                if not 0 < min_age:
+                    min_age = None
+                    logger.warning(f'Unable to obtain min_age for {name}')
+
+                players = None
+                try:
+                    players = Players(lower=boardgame_response['minplayers'],
+                                      upper=boardgame_response['maxplayers'])
+                except ValidationError:
+                    logger.warning(f'Unable to obtain players for {name}')
+
+                play_time = None
+                try:
+                    play_time = PlayTime(lower=boardgame_response['minplaytime'],
+                                         upper=boardgame_response['maxplaytime'])
+                except ValidationError:
+                    logger.warning(f'Unable to obtain play_time for {name}')
+
+                published = None
+                try:
+                    published = Year(boardgame_response['yearpublished'])
+                except ValidationError:
+                    logger.warning(f'Unable to obtain year for {name}')
+
+                community_min_age = None
+                try:
+                    poll_values = poll_age.winner()
+                    community_min_age = MinAge(poll_values)
+                except ValidationError:
+                    logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
+
+                # TODO: Load community info as set of values instead of interval
+                community_players = None
+                try:
+                    poll_values = (poll_players.choice_2_poll('Best') +
+                                   poll_players.choice_2_poll('Recommended')).winners()
+                    community_players = Players.from_list(poll_values)
+                except ValidationError:
+                    logger.warning(f'Unable to obtain community_players with {poll_values} for {name}')
+
+                community_best_players = None
+                try:
+                    poll_values = poll_players.winners('Best')
+                    community_best_players = Players.from_list(poll_values)
+                except ValidationError:
+                    logger.warning(f'Unable to obtain community_best_players with {poll_values} for {name}')
+
                 boardgame = BGGGame(
                     name=name,
                     designers=designers,
-                    min_age=MinAge(boardgame_response['age']),
-                    players=Players(lower=boardgame_response['minplayers'],
-                                    upper=boardgame_response['maxplayers']),
-                    play_time=PlayTime(lower=boardgame_response['minplaytime'],
-                                       upper=boardgame_response['maxplaytime']),
-                    published=Year(boardgame_response['yearpublished']),
+                    min_age=min_age,
+                    players=players,
+                    play_time=play_time,
+                    published=published,
                     bgg_id=id,
-                    community_min_age=poll_age.winner(),
-                    # TODO: Load community info as set of values instead of interval
-                    community_players=Players.from_list(poll_players.winners('Best') +
-                                                        poll_players.winners('Recommended')),
-                    community_best_players=Players.from_list(poll_players.winners('Best'))
+                    community_min_age=community_min_age,
+                    community_players=community_players,
+                    community_best_players=community_best_players
                 )
             except Exception as e:
-                logger.error(f"Error obtaining {id} boardgame from response {response.text}")
+                logger.error(f"Error obtaining {id} boardgame from response")
                 raise e
 
-            logger.info(f"Obtained boardgame {boardgame} from id {id}")
+            logger.info(f"Obtained boardgame {boardgame.name} with id {id}")
             return boardgame
 
     async def boardgame_by_name(self, name: str):
@@ -140,5 +185,5 @@ class BggProvider:
             boardgame_ids = [i['@objectid'] for i in response_items['item'] if i['@subtype'] == 'boardgame']
             return await aiometer.run_all(
                 [partial(self.boardgame_by_id, id) for id in boardgame_ids],
-                max_at_once=8,
-                max_per_second=5)
+                max_at_once=20,
+                max_per_second=10)

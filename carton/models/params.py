@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
-from typing import Sequence, Optional
+from typing import Sequence
 
 
 # TODO: Add common interval methods
@@ -11,7 +11,7 @@ class Interval[T](BaseModel):
 
     lower: T
     upper: T
-    unit: Optional[str] = None
+    unit: str | None = None
 
     @model_validator(mode='after')
     def check_upper_and_lower(self):

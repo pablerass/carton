@@ -49,6 +49,38 @@ def test_poll_calculations():
     assert poll.loosers() == ['b', 'c']
 
 
+def test_poll_operations():
+    poll1 = Poll(
+        choices=['a', 'b', 'c'],
+        votes={
+            'a': 3,
+            'b': 5
+        }
+    )
+    poll2 = Poll(
+        votes={
+            'a': 3,
+            'c': 2
+        }
+    )
+    poll3 = Poll(
+        votes={
+            'a': 3,
+            'b': 0,
+            'c': 5
+        }
+    )
+
+    with pytest.raises(ValueError):
+        poll1 + poll2
+
+    assert dict((poll1 + poll3).votes) == {
+        'a': 6,
+        'b': 5,
+        'c': 5
+    }
+
+
 def test_poll_from():
     poll_dict = Poll.from_dict(votes={
         'a': 1,
@@ -105,12 +137,12 @@ def test_multilevel_poll_calculations():
         }
     )
 
-    assert poll._choice_2_votes('good') == {
+    assert dict(poll.choice_2_poll('good').votes) == {
         'a': 3,
         'b': 5,
         'c': 0
     }
-    assert poll._choice_2_votes('ugly') == {
+    assert dict(poll.choice_2_poll('ugly').votes) == {
         'a': 0,
         'b': 6,
         'c': 0

@@ -36,6 +36,8 @@ class Poll[T](BaseModel):
             for c in self.choices:
                 self.votes[c]
 
+        self.choices = tuple(sorted(self.choices))
+
     def vote(self, choice: T, num_votes: int = 1):
         self.votes[choice] += num_votes
 
@@ -65,8 +67,17 @@ class Poll[T](BaseModel):
 
     # TODO: Add top choices based on statistics method
 
+    def __add__(self, other: Poll[T]) -> Poll[T]:
+        if self.choices != other.choices:
+            raise ValueError('added polls must contain the same choices')
+
+        added_votes = {
+            choice: self.votes[choice] + other.votes[choice] for choice in self.choices
+        }
+        return Poll(choices=self.choices, votes=added_votes)
+
     @classmethod
-    def from_dict(cls, votes: dict[T, int]) -> Poll:
+    def from_dict(cls, votes: dict[T, int]) -> Poll[T]:
         return cls(votes=votes)
 
     @classmethod
@@ -128,6 +139,9 @@ class MultilevelPoll[T, U](BaseModel):
                     for c2 in self.choices_2:
                         self.votes[c1][c2]
 
+        self.choices_1 = tuple(sorted(self.choices_1))
+        self.choices_2 = tuple(sorted(self.choices_2))
+
     def vote(self, choice_1: T, choice_2: U, num_votes: int = 1):
         self.votes[choice_1][choice_2] += num_votes
 
@@ -145,6 +159,9 @@ class MultilevelPoll[T, U](BaseModel):
 
     def _choice_2_votes(self, choice_2: U) -> dict[T, int]:
         return {k: v.get(choice_2, 0) for k, v in self.votes.items()}
+
+    def choice_2_poll(self, choice_2: U) -> Poll[T]:
+        return Poll(votes=self._choice_2_votes(choice_2))
 
     def winner(self, choice_2: U, strategy: Callable[T] = min) -> T:
         return strategy(self.winners(choice_2))
