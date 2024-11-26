@@ -1,17 +1,23 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, PositiveInt, GetCoreSchemaHandler
-from pydantic_core import core_schema
-from typing import Optional, Type, Any
-from sqlalchemy import TypeDecorator, JSON
+from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
+from typing import Sequence, Optional
 
 
-# TODO: Make attribute names optional
-# TODO: Convert Any to generic type and add common interval methods
-class Interval(BaseModel):
-    lower: Any
-    upper: Any
+# TODO: Add common interval methods
+# TODO: Remove units as they are userful only for visualization and make the management more complex
+class Interval[T](BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lower: T
+    upper: T
     unit: Optional[str] = None
+
+    @model_validator(mode='after')
+    def check_upper_and_lower(self):
+        assert (self.lower <= self.upper), 'lower interval value must be lower or equal than upper'
+
+        return self
 
     def __str__(self):
         interval = f'{self.lower}-{self.upper}'
@@ -19,64 +25,32 @@ class Interval(BaseModel):
             interval = self.lower
         return f"{interval}{' ' + self.unit if self.unit is not None else ''}"
 
+    @classmethod
+    def from_list(cls, items: Sequence[PositiveInt], unit: str = None) -> Interval[PositiveInt]:
+        return cls(lower=min(items), upper=max(items), unit=unit)
 
-class PositiveInterval(Interval):
-    lower: PositiveInt
-    upper: PositiveInt
-    unit: Optional[str] = None
+
+PositiveInterval = Interval[PositiveInt]
 
 
 class Players(PositiveInterval):
     unit: str = 'players'
 
+    @classmethod
+    def from_list(cls, items: Sequence[PositiveInt], unit: str = None) -> PositiveInterval:
+        return super().from_list(items, 'players')
+
 
 class PlayTime(PositiveInterval):
     unit: str = 'mins'
 
-
-class MinAge(PositiveInt):
-    def __str__(self):
-        return f"{int(self)}+"
-
-    def __repr__(self):
-        return f"MinAge({int(self)})"
-
-    # TODO: All this is crap
     @classmethod
-    def __get_pydantic_core_schema__(cls, source: Type[Any], handler: GetCoreSchemaHandler):
-        assert source is MinAge
-        return core_schema.no_info_after_validator_function(
-            cls._validate,
-            core_schema.int_schema(),
-            serialization=core_schema.plain_serializer_function_ser_schema(
-                cls._serialize,
-                info_arg=False,
-                return_schema=core_schema.int_schema(),
-            )
-        )
-
-    @staticmethod
-    def _validate(value: MinAge) -> str:
-        return value > 0
-
-    @staticmethod
-    def _serialize(value: MinAge) -> str:
-        return value
+    def from_list(cls, items: Sequence[PositiveInt], unit: str = None) -> PositiveInterval:
+        return super().from_list(items, 'mins')
 
 
-# TODO: Make JSONInterval the default sa_type for all intervals
-# TODO: Move this class to another place related with model persistence
-class JSONInterval(TypeDecorator):
-    impl = JSON
+# TODO: Add {min_age}+ as default __str__ for min_age
+MinAge = PositiveInt
 
-    cache_ok = True
-
-    def process_bind_param(self, value, dialect):
-        if value is not None:
-            return {'lower': value.lower, 'upper': value.upper, 'unit': value.unit}
-        return None
-
-    def process_result_value(self, value, dialect):
-        if value is not None:
-            return PositiveInterval(lower=value['lower'], upper=value['upper'], unit=value['unit'])
-        return None
+# TODO: Limit possible year values
+Year = PositiveInt

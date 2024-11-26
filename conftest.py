@@ -9,6 +9,7 @@ from carton.models import *
 def db_session():
     engine = create_engine(
         "sqlite:///:memory:",
+        # "sqlite:///test.db",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
         echo=True

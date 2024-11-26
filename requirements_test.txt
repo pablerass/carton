@@ -4,3 +4,4 @@ pytest-httpx
 pytest-asyncio
 flake8
 coverage
+pytest_unordered

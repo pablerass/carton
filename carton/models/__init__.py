@@ -1,5 +1,5 @@
-from .boardgame import BoardGame, Designer, BoardGameDesignerLink
+from .boardgame import BoardGame, Designer
 
 __all__ = [
-    "BoardGame", "Designer", "BoardGameDesignerLink"
+    "BoardGame", "Designer"
 ]

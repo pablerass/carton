@@ -1,35 +1,48 @@
-# from __future__ import annotations
-# annotations are not properly supported in current SQLAlchemy and Pydantic versions
-# https://github.com/tiangolo/sqlmodel/issues/196
+from __future__ import annotations
 
-from sqlmodel import Field, SQLModel, Relationship
+from pydantic import BaseModel, ConfigDict, PositiveInt
 
-from .params import MinAge, Players, PlayTime, JSONInterval
+from .params import Players, PlayTime, MinAge, Year
 
 
-class BoardGameDesignerLink(SQLModel, table=True):
-    board_game_id: int | None = Field(default=None, foreign_key="boardgame.id", primary_key=True)
-    dasigner_id: int | None = Field(default=None, foreign_key="designer.id", primary_key=True)
+class BoardGame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-
-class BoardGame(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
     name: str
-    designers: list['Designer'] = Relationship(back_populates="board_games", link_model=BoardGameDesignerLink)
+    designers: set['Designer'] = set()
     min_age: MinAge
-    players: Players = Field(sa_type=JSONInterval)
-    play_time: PlayTime = Field(sa_type=JSONInterval)
+    players: Players
+    play_time: PlayTime
+    published: Year = None
     # TODO: Add published year
 
+    def model_post_init(self, __context):
+        for d in self.designers:
+            d.boardgames.add(self)
 
-# class BGGGame(BoardGame):
-#     id: PositiveInt
-#     community_min_age: MinAge = None
-#     community_players: PlayersRange = None
-#     community_best_players: PlayersRange = None
+    def __hash__(self):
+        return hash(self.name)
 
 
-class Designer(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
+class BGGGame(BoardGame):
+    bgg_id: PositiveInt
+    community_min_age: MinAge = None
+    community_players: Players = None
+    community_best_players: Players = None
+
+    def __hash__(self):
+        return hash(self.bgg_id)
+
+
+class Designer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
-    board_games: list[BoardGame] = Relationship(back_populates="designers", link_model=BoardGameDesignerLink)
+    boardgames: set[BoardGame] = set()
+
+    def __hash__(self):
+        return hash(self.name)
+
+
+class BGGDesigner(Designer):
+    bgg_id: PositiveInt

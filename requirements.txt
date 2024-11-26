@@ -1,6 +1,7 @@
 fastapi
 aiohttp
+aiometer
 argparse
 sqlmodel
 pydantic
-aiometer
+xmltodict

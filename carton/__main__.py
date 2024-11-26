@@ -1,13 +1,11 @@
-import aiometer
 import argparse
 import asyncio
 import logging
 import os
+import pandas as pd
 import sys
 
-from functools import partial
-
-from .providers import BggProvider, TrelloProvider
+from .providers import BggProvider
 
 
 def parse_args(args: list[str] = None) -> argparse.Namespace:
@@ -38,20 +36,21 @@ async def main(args=None):
         logging.getLogger('httpcore').propagate = False
         logging.getLogger('httpx').propagate = False
 
-    trello = TrelloProvider(args.trello_api_key, args.trello_api_token)
-    bgg = BggProvider()
-    boardgame_names = [
-        card['name'] for card in
-        await trello.list_cards('5fe62b9d8934f35ed591137a')]
-    boardgames = await aiometer.run_all(
-        [partial(bgg.boardgame_by_name, name) for name in boardgame_names[:3]],
-        max_at_once=8,
-        max_per_second=5
-    )
-    print(boardgames)
+    # trello = TrelloProvider(args.trello_api_key, args.trello_api_token)
+    # boardgame_names = [
+    #     card['name'] for card in
+    #     await trello.list_cards('5fe62b9d8934f35ed591137a')]
+    # boardgames = await aiometer.run_all(
+    #     [partial(bgg.boardgame_by_name, name) for name in boardgame_names[:3]],
+    #     max_at_once=8,
+    #     max_per_second=5
+    # )
+    # print(boardgames)
 
-    # boardgame = asyncio.run(BggProvider().boardgame_by_name('Ticket to Ride'))
-    # print(boardgame)
+    user_games = await BggProvider().user_collection('pablerzas')
+    user_games_df = pd.DataFrame(dict(u) for u in user_games)
+    user_games_df.to_csv('~/file.csv')
+
 
     return 0
 
