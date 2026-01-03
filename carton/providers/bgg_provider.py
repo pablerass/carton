@@ -13,7 +13,7 @@ from ..models.poll import Poll, MultilevelPoll
 
 
 BGG_URL: str = "https://boardgamegeek.com"
-
+BGG_LOGIN_URL: str = "https://boardgamegeek.com/login/api/v1"
 
 _BggApiUrl: namedtuple = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
 
@@ -56,12 +56,40 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
 
 class BggProvider:
     def __init__(self, url: str = BGG_URL):
-        self.__url = url
-        self.__api = _BggApiUrl(
+        self.__url: str = url
+        self.__api: str = _BggApiUrl(
             xml=f"{url}/xmlapi",
             xml2=f"{url}/xmlapi2",
             json=f"{url}/api"
         )
+        # Stored auth cookies after successful authentication (None if not authenticated)
+        self.__cookies: dict | None = None
+
+    def login(self, username: str, password: str) -> None:
+        """Login to BoardGameGeek and store session cookies for subsequent requests.
+
+        Sends a JSON payload {"credentials": {"username": username, "password": password}}
+        to the BGG login endpoint and stores returned cookies in `self._cookies`.
+        Raises httpx.HTTPStatusError on non-2xx responses or ValueError if the login is rejected.
+        """
+        logger = logging.getLogger('carton.BggProvider.login')
+
+        with httpx.Client() as client:
+            response = client.post(BGG_LOGIN_URL, json={"credentials": {"username": username, "password": password}})
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError:
+                logger.error(f"Authentication request failed with status {response.status_code}: {response.text[:200]}")
+                raise
+
+            # Convert cookies to a simple dict for reuse in future requests
+            self._cookies = dict(response.cookies)
+
+            logger.debug(f"Authenticated as {username}")
+
+    def logout(self) -> None:
+        """Clear stored authentication cookies."""
+        self._cookies = None
 
     @property
     def url(self) -> str:
@@ -74,7 +102,8 @@ class BggProvider:
     async def hot(self):
         # TODO: Move the client class level
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{self._api.xml2}/hot")
+            response = await client.get(f"{self._api.xml2}/hot", cookies=self._cookies)
+            response.raise_for_status()
             # TODO: Return the right response
             print(response.text)
 
@@ -83,7 +112,9 @@ class BggProvider:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{self._api.xml}/boardgame/{id}",
-                                        params={'stats': 1})
+                                        params={'stats': 1},
+                                        cookies=self._cookies)
+            response.raise_for_status()
 
             logger.debug(f"Found game {id}")
             try:
@@ -185,7 +216,10 @@ class BggProvider:
             # TODO: Extract this to a search method
             response = await client.get(
                 f"{self._api.xml2}/search",
-                params={'query': name, 'type': 'boardgame', 'exact': 1})
+                params={'query': name, 'type': 'boardgame', 'exact': 1},
+                cookies=self._cookies)
+
+            response.raise_for_status()
 
             # TUNE: Remove of format better this log line
             logger.debug(f"Found {response.text} games for name {name}")
@@ -216,7 +250,11 @@ class BggProvider:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self._api.xml2}/collection",
-                params={'username': user, 'own': 1})
+                params={'username': user, 'own': 1},
+                cookies=self._cookies)
+
+            response.raise_for_status()
+            print(response.text)
 
             response_items = xmltodict.parse(response.text)['items']
             logger.debug(f"Found {response_items['@totalitems']} games in {user} collection")
