@@ -45,11 +45,11 @@ class Poll[T](BaseModel):
         self.votes[choice] = value
 
     def set_votes(self, votes: dict[T, int]):
-        if set(votes.keys()) - self.choices:
+        if set(votes.keys()) - set(self.choices):
             raise ValidationError('vote choices do not match with poll choices')
         self.votes |= votes
 
-    def winner(self, strategy: Callable[T] = min) -> T:
+    def winner(self, strategy: Callable[..., T] = min) -> T:
         return strategy(self.winners())
 
     def winners(self) -> list[T]:
@@ -57,7 +57,7 @@ class Poll[T](BaseModel):
         max_value = max(self.votes.values())
         return [k for k, v in self.votes.items() if v == max_value]
 
-    def looser(self, strategy: Callable[T] = min) -> T:
+    def looser(self, strategy: Callable[..., T] = min) -> T:
         return strategy(self.loosers())
 
     def loosers(self) -> list[T]:
@@ -76,6 +76,7 @@ class Poll[T](BaseModel):
         }
         return Poll(choices=self.choices, votes=added_votes)
 
+    # TODO: Extract this load methods as functions?
     @classmethod
     def from_dict(cls, votes: dict[T, int]) -> Poll[T]:
         return cls(votes=votes)
@@ -149,11 +150,11 @@ class MultilevelPoll[T, U](BaseModel):
         self.votes[choice_1][choice_2] = value
 
     def set_votes(self, votes: dict[T, dict[U, int]]):
-        if set(votes.keys()) - self.choices_1:
+        if set(votes.keys()) - set(self.choices_1):
             raise ValidationError('vote choices_1 do not match with poll choices_1')
 
         for choice_1 in votes.keys():
-            if set(votes[choice_1].keys()) - self.choices_2:
+            if set(votes[choice_1].keys()) - set(self.choices_2):
                 raise ValidationError(f'vote {choice_1} choices_2 do not match with poll choices_2')
             self.votes[choice_1] |= votes[choice_1]
 
@@ -163,7 +164,7 @@ class MultilevelPoll[T, U](BaseModel):
     def choice_2_poll(self, choice_2: U) -> Poll[T]:
         return Poll(votes=self._choice_2_votes(choice_2))
 
-    def winner(self, choice_2: U, strategy: Callable[T] = min) -> T:
+    def winner(self, choice_2: U, strategy: Callable[[T], T] = min) -> T:
         return strategy(self.winners(choice_2))
 
     def winners(self, choice_2: U) -> list[T]:
@@ -189,6 +190,7 @@ class MultilevelPoll[T, U](BaseModel):
 
     # TODO: Add top choices based on statistics method
 
+    # TODO: Extract this load methods as functions?
     @classmethod
     def from_dict(cls, votes: dict[T, dict[U, int]]) -> MultilevelPoll:
         return cls(votes=votes)

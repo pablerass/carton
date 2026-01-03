@@ -14,7 +14,7 @@ class BoardGame(BaseModel):
     players: Players | None = None
     play_time: PlayTime | None = None
     published: Year | None = None
-    # TODO: Add published year
+    # TODO: Add expansions relation
 
     def model_post_init(self, __context):
         for d in self.designers:
@@ -29,6 +29,9 @@ class BGGGame(BoardGame):
     community_min_age: MinAge | None = None
     community_players: Players | None = None
     community_best_players: Players | None = None
+    community_average_weight: float | None = None
+    # TODO: Add rank
+    # TODO: Add rating
 
     def __hash__(self):
         return hash(self.bgg_id)
@@ -39,6 +42,9 @@ class Designer(BaseModel):
 
     name: str
     boardgames: set[BoardGame] = set()
+
+    def __str__(self) -> str:
+        return self.name
 
     def __hash__(self):
         return hash(self.name)

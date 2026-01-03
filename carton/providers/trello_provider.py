@@ -1,6 +1,8 @@
 import asyncio
 import httpx
 
+from typing import Optional
+
 
 TRELLO_API_URL: str = "https://api.trello.com/1"
 
@@ -8,7 +10,7 @@ TRELLO_API_URL: str = "https://api.trello.com/1"
 # def _id_or_name(id: str = None, name: str = None) -> str:
 
 
-def _member_or_me(member: str = None) -> str:
+def _member_or_me(member: Optional[str] = None) -> str:
     if member is None:
         return "me"
     return member
@@ -45,20 +47,20 @@ class TrelloProvider:
             # TUNE: It seems that close is async
             asyncio.run(self._close_client())
 
-    async def member(self, id: str = None) -> dict:
+    async def member(self, id: Optional[str] = None) -> dict:
         member = _member_or_me(id)
         response = await self._client.get(f"{self.api_url}/members/{member}")
         return response.json()
 
-    async def boards(self, member: str = None) -> list[dict]:
+    async def boards(self, member: Optional[str] = None) -> list[dict]:
         member = _member_or_me(member)
         response = await self._client.get(f"{self.api_url}/members/{member}/boards")
         return response.json()
 
-    async def board_lists(self, board_id: str = None) -> dict:
+    async def board_lists(self, board_id: Optional[str] = None) -> dict:
         response = await self._client.get(f"{self.api_url}/boards/{board_id}/lists")
         return response.json()
 
-    async def list_cards(self, list_id: str = None) -> dict:
+    async def list_cards(self, list_id: Optional[str] = None) -> dict:
         response = await self._client.get(f"{self.api_url}/lists/{list_id}/cards")
         return response.json()

@@ -4,6 +4,8 @@
 
 from sqlmodel import Field, SQLModel, Relationship
 
+from .boardgame import BoardGame
+
 
 class User(SQLModel, table=True):
     id: str = Field(primary_key=True)
@@ -29,4 +31,4 @@ class Session(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     creator: 'User' = Relationship()
     available_games: list[BoardGame] = Relationship
-    open: bool = Filed(default=False)
+    open: bool = Field(default=False)

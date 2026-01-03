@@ -1,20 +1,23 @@
 import argparse
 import asyncio
 import logging
-import os
 import pandas as pd
 import sys
+
+from typing import Optional
 
 from .providers import BggProvider
 
 
-def parse_args(args: list[str] = None) -> argparse.Namespace:
+def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     if args is None:
         args = sys.argv[1:]
 
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--trello-api-key', type=str, default=os.environ.get('TRELLO_API_KEY', None))
-    parser.add_argument('--trello-api-token', type=str, default=os.environ.get('TRELLO_API_TOKEN', None))
+    parser.add_argument('--user', '-u', type=str, default='pablerzas')
+    # parser.add_argument('--trello-api-key', type=str, default=os.environ.get('TRELLO_API_KEY', None))
+    # parser.add_argument('--trello-api-token', type=str, default=os.environ.get('TRELLO_API_TOKEN', None))
+
     parser.add_argument('-v', '--verbose', action='count', default=0,
                         help="Display verbose output")
 
@@ -47,10 +50,12 @@ async def main(args=None):
     # )
     # print(boardgames)
 
-    user_games = await BggProvider().user_collection('pablerzas')
-    user_games_df = pd.DataFrame(dict(u) for u in user_games)
-    user_games_df.to_csv('~/file.csv')
-
+    user_games = await BggProvider().user_collection(args.user)
+    user_games_df = pd.DataFrame(dict(u) for u in user_games).drop('bgg_id', axis='columns')
+    user_games_df['designers'] = user_games_df['designers'].apply(
+        lambda x: ', '.join(str(d) for d in x))
+    print(user_games_df)
+    user_games_df.to_csv('~/file.csv', index=False)
 
     return 0
 

@@ -1,5 +1,5 @@
 from carton.models.boardgame import BoardGame, Designer
-from carton.models.params import Players, PlayTime, MinAge
+from carton.models.params import Players, PlayersInterval, PlayTime, MinAge
 
 # from sqlmodel import select
 
@@ -11,7 +11,7 @@ def test_board_game():
         name="Rebirth",
         designers=[designer],
         min_age=MinAge(10),
-        players=Players(lower=2, upper=4),
+        players=Players(intervals=[PlayersInterval(lower=2, upper=4)]),
         play_time=PlayTime(lower=45, upper=60)
     )
 
@@ -22,7 +22,7 @@ def test_board_game():
         name="Ra",
         designers=[designer],
         min_age=MinAge(12),
-        players=Players(lower=2, upper=5),
+        players=Players(interval=[PlayersInterval(lower=2, upper=5)]),
         play_time=PlayTime(lower=45, upper=60),
     )
 

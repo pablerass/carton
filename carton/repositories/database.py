@@ -17,17 +17,17 @@ class Repository:
 
 class BoardGamesRepository:
     def add(self, board_game: BoardGame | list[BoardGame]):
-        if isinstace(board_game, BoardGame):
+        if isinstance(board_game, BoardGame):
             board_game = [board_game]
 
-        for b in board_game
+        for b in board_game:
             self._session.add(b)
 
 
 class DesignersRepository():
     def add(self, designer: Designer | list[Designer]):
-        if isinstace(board_game, Designer):
+        if isinstance(designer, Designer):
             designer = [designer]
 
-        for d in designer
+        for d in designer:
             self._session.add(d)

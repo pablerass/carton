@@ -23,9 +23,14 @@ build:
 lint:
 	flake8
 
+type-check:
+	mypy .
+
 test:
 	pytest
 
 test-coverage:
 	coverage run --source carton -m pytest
 	coverage report -m
+
+test-all: lint type-check test-coverage

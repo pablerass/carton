@@ -8,7 +8,7 @@ from functools import partial
 from pydantic import ValidationError
 
 from ..models.boardgame import BGGGame, BGGDesigner
-from ..models.params import Players, PlayTime, MinAge, Year
+from ..models.params import Players, PlayersInterval, PlayTime, MinAge, Year
 from ..models.poll import Poll, MultilevelPoll
 
 
@@ -16,6 +16,42 @@ BGG_URL: str = "https://boardgamegeek.com"
 
 
 _BggApiUrl: namedtuple = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
+
+
+def _parse_polls(polls_response: list[dict]) -> dict[str, Poll]:
+    if isinstance(polls_response, dict):
+        polls_response = [polls_response]
+
+    polls = {poll['@name']: poll['results']
+             for poll in polls_response}
+
+    polls['language_dependence'] = Poll.from_list(polls['language_dependence']['result'], '@level', '@numvotes')
+    polls['suggested_numplayers'] = MultilevelPoll.from_list(
+        polls['suggested_numplayers'],
+        choice_1_key='@numplayers', votes_1_key='result',
+        choice_2_key='@value', votes_2_key='@numvotes')
+    polls['suggested_playerage'] = Poll.from_list(polls['suggested_playerage']['result'], '@value', '@numvotes')
+
+    return polls
+
+
+def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
+    if isinstance(polls_summary_response, dict):
+        polls_summary_response = [polls_summary_response]
+
+    polls_summary = {poll_summary['@name']: poll_summary['result']
+                     for poll_summary in polls_summary_response}
+
+    try:
+        polls_summary['suggested_numplayers'] = {
+            value[0]: PlayersInterval.from_list(items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
+            for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
+        }
+    except ValueError as e:
+        print(polls_summary_response)
+        raise e
+
+    return polls_summary
 
 
 class BggProvider:
@@ -46,7 +82,8 @@ class BggProvider:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_id')
 
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{self._api.xml}/boardgame/{id}")
+            response = await client.get(f"{self._api.xml}/boardgame/{id}",
+                                        params={'stats': 1})
 
             logger.debug(f"Found game {id}")
             try:
@@ -63,13 +100,8 @@ class BggProvider:
                 designers = [BGGDesigner(name=designer['#text'], bgg_id=designer['@objectid'])
                              for designer in designer_info]
 
-                poll_info = boardgame_response['poll']
-                polls = {poll['@name']: poll['results'] for poll in poll_info}
-                poll_age = Poll.from_list(polls['suggested_playerage']['result'], '@value', '@numvotes')
-                poll_players = MultilevelPoll.from_list(
-                    polls['suggested_numplayers'],
-                    choice_1_key='@numplayers', votes_1_key='result',
-                    choice_2_key='@value', votes_2_key='@numvotes')
+                polls = _parse_polls(boardgame_response['poll'])
+                poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
 
                 min_age = MinAge(boardgame_response['age'])
                 # TUNE: It would be better to execute MinAge validation
@@ -99,26 +131,32 @@ class BggProvider:
 
                 community_min_age = None
                 try:
-                    poll_values = poll_age.winner()
+                    poll_values = polls['suggested_playerage'].winner()
                     community_min_age = MinAge(poll_values)
                 except ValidationError:
                     logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
 
                 # TODO: Load community info as set of values instead of interval
                 community_players = None
-                try:
-                    poll_values = (poll_players.choice_2_poll('Best') +
-                                   poll_players.choice_2_poll('Recommended')).winners()
-                    community_players = Players.from_list(poll_values)
-                except ValidationError:
-                    logger.warning(f'Unable to obtain community_players with {poll_values} for {name}')
-
                 community_best_players = None
-                try:
-                    poll_values = poll_players.winners('Best')
-                    community_best_players = Players.from_list(poll_values)
-                except ValidationError:
-                    logger.warning(f'Unable to obtain community_best_players with {poll_values} for {name}')
+                if 'suggested_playernum' in polls:
+                    try:
+                        poll_players = polls['suggested_playernum']
+                        poll_values = (poll_players.choice_2_poll('Best') +
+                                       poll_players.choice_2_poll('Recommended')).winners()
+                        community_players = Players.from_list(poll_values)
+                    except ValidationError:
+                        logger.warning(f'Unable to obtain community_players with {poll_values} for {name}')
+
+                    try:
+                        poll_values = poll_players.winners('Best')
+                        community_best_players = Players.from_list(poll_values)
+                    except ValidationError:
+                        logger.warning(f'Unable to obtain community_best_players with {poll_values} for {name}')
+
+                from pprint import pprint
+                pprint(boardgame_response)
+                community_average_weight = boardgame_response['statistics']['ratings']['averageweight']
 
                 boardgame = BGGGame(
                     name=name,
@@ -130,7 +168,8 @@ class BggProvider:
                     bgg_id=id,
                     community_min_age=community_min_age,
                     community_players=community_players,
-                    community_best_players=community_best_players
+                    community_best_players=community_best_players,
+                    community_average_weight=community_average_weight
                 )
             except Exception as e:
                 logger.error(f"Error obtaining {id} boardgame from response")
@@ -139,7 +178,7 @@ class BggProvider:
             logger.info(f"Obtained boardgame {boardgame.name} with id {id}")
             return boardgame
 
-    async def boardgame_by_name(self, name: str):
+    async def boardgame_by_name(self, name: str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_name')
 
         async with httpx.AsyncClient() as client:

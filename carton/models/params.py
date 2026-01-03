@@ -4,14 +4,12 @@ from pydantic import BaseModel, ConfigDict, PositiveInt, model_validator
 from typing import Sequence
 
 
-# TODO: Add common interval methods
-# TODO: Remove units as they are userful only for visualization and make the management more complex
+# TODO: Add common interval methods such as join, etc.
 class Interval[T](BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     lower: T
     upper: T
-    unit: str | None = None
 
     @model_validator(mode='after')
     def check_upper_and_lower(self):
@@ -22,35 +20,32 @@ class Interval[T](BaseModel):
     def __str__(self):
         interval = f'{self.lower}-{self.upper}'
         if self.lower == self.upper:
-            interval = self.lower
-        return f"{interval}{' ' + self.unit if self.unit is not None else ''}"
+            interval = str(self.lower)
+        return interval
 
     @classmethod
-    def from_list(cls, items: Sequence[PositiveInt], unit: str = None) -> Interval[PositiveInt]:
-        return cls(lower=min(items), upper=max(items), unit=unit)
+    def from_list(cls, items: Sequence[T]) -> Interval[T]:
+        print(items)
+        return cls(lower=min(items), upper=max(items))
 
 
-PositiveInterval = Interval[PositiveInt]
+class Intervals[T](BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
+    # TUNE: Maybe this could use nargs instead of a list as parameter
+    intervals: list[T]
 
-class Players(PositiveInterval):
-    unit: str = 'players'
-
-    @classmethod
-    def from_list(cls, items: Sequence[PositiveInt], unit: str = None) -> PositiveInterval:
-        return super().from_list(items, 'players')
-
-
-class PlayTime(PositiveInterval):
-    unit: str = 'mins'
+    def __str__(self):
+        return ', '.join([str(interval) for interval in self.intervals])
 
     @classmethod
-    def from_list(cls, items: Sequence[PositiveInt], unit: str = None) -> PositiveInterval:
-        return super().from_list(items, 'mins')
+    def from_list(cls, items: Sequence[Sequence[T]]) -> Intervals[T]:
+        return cls(intervals=[
+            Interval[T].from_list(interval_items) for interval_items in items])
 
 
-# TODO: Add {min_age}+ as default __str__ for min_age
+PlayersInterval = Interval[PositiveInt]
+Players = Intervals[PlayersInterval]
+PlayTime = Interval[PositiveInt]
 MinAge = PositiveInt
-
-# TODO: Limit possible year values
-Year = PositiveInt
+Year = PositiveInt  # TODO: Limit possible year values
