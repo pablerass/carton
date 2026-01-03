@@ -24,7 +24,7 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
-async def main(args=None):
+def main(args=None):
     """Execute main package command line functionality."""
     args = parse_args()
 
@@ -49,8 +49,8 @@ async def main(args=None):
     #     max_per_second=5
     # )
     # print(boardgames)
-
-    user_games = await BggProvider().user_collection(args.user)
+    bgg = BggProvider()
+    user_games = asyncio.run(bgg.user_collection(args.user))
     user_games_df = pd.DataFrame(dict(u) for u in user_games).drop('bgg_id', axis='columns')
     user_games_df['designers'] = user_games_df['designers'].apply(
         lambda x: ', '.join(str(d) for d in x))
@@ -61,4 +61,4 @@ async def main(args=None):
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(main())
