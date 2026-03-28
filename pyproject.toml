@@ -22,7 +22,8 @@ classifiers = [
 requires_python = ">=3.10"
 
 [tool.poetry.dependencies]
-python = ">=3.10"
+python = ">=3.14"
+cartucho = "*"
 pandas = "*"
 fastapi = "*"
 aiohttp = "*"
@@ -32,14 +33,14 @@ pydantic = "*"
 xmltodict = "*"
 
 [tool.poetry.group.test.dependencies]
-pytest = "8.*"
-pytest-httpx = "0.*"
-pytest-asyncio = "0.*"
-pytest-unordered = "0.*"
-flake8 = "7.*"
-coverage = "7.*"
-mypy = "1.*"
-types-setuptools = "75.*"
+pytest = "*"
+pytest-httpx = "*"
+pytest-asyncio = "*"
+pytest-unordered = "*"
+flake8 = "*"
+coverage = "*"
+mypy = "*"
+types-setuptools = "*"
 types-xmltodict = "*"
 pandas-stubs = "*"
 

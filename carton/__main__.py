@@ -17,6 +17,8 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--bgg-user', '-u', type=str, default=os.environ.get('BGG_USER', None))
     parser.add_argument('--bgg-password', '-p', type=str, default=os.environ.get('BGG_PASSWORD', None))
+    parser.add_argument('--bgg-api-key', type=str, default=os.environ.get('BGG_API_KEY', None),
+                        help='Optional BoardGameGeek API key to include on requests')
     # parser.add_argument('--trello-api-key', type=str, default=os.environ.get('TRELLO_API_KEY', None))
     # parser.add_argument('--trello-api-token', type=str, default=os.environ.get('TRELLO_API_TOKEN', None))
 
@@ -41,18 +43,16 @@ def main(args=None):
         logging.getLogger('httpcore').propagate = False
         logging.getLogger('httpx').propagate = False
 
-    # trello = TrelloProvider(args.trello_api_key, args.trello_api_token)
-    # boardgame_names = [
-    #     card['name'] for card in
-    #     await trello.list_cards('5fe62b9d8934f35ed591137a')]
-    # boardgames = await aiometer.run_all(
-    #     [partial(bgg.boardgame_by_name, name) for name in boardgame_names[:3]],
-    #     max_at_once=8,
-    #     max_per_second=5
-    # )
-    # print(boardgames)
     bgg = BggProvider()
-    bgg.login(args.bgg_user, args.bgg_password)
+    # Configure optional API key
+    if args.bgg_api_key:
+        print("Using BGG API key authentication")
+        bgg.api_login(args.bgg_api_key)
+
+    # Login only if both user and password were provided
+    #if args.bgg_user and args.bgg_password:
+    #    bgg.user_login(args.bgg_user, args.bgg_password)
+
     user_games = asyncio.run(bgg.user_collection(args.bgg_user))
     user_games_df = pd.DataFrame(dict(u) for u in user_games).drop('bgg_id', axis='columns')
     user_games_df['designers'] = user_games_df['designers'].apply(
