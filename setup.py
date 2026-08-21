@@ -14,8 +14,7 @@ setup(
         'Intended Audience :: End Users/Desktop',
         'License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)',
         'Operating System :: OS Independent',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.14',
         'Topic :: Games/Entertainment :: Board Games',
         'Typing :: Typed'
     ],
@@ -31,5 +30,5 @@ setup(
     },
     packages=['carton'],
     install_requires=[line for line in open('requirements.txt')],
-    python_requires='>=3.10'
+    python_requires='>=3.14'
 )

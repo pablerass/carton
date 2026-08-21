@@ -43,6 +43,29 @@ async def test_user_login_stores_cookies_and_reuses_them(httpx_mock):
     }
 
 
+async def test_api_login_and_logout_control_request_authentication(httpx_mock):
+    bgg = BggProvider(api_key="token")
+
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{bgg._api.xml2}/search?query=whatever&type=boardgame&exact=1",
+        status_code=200,
+        text="<items total=\"0\"></items>",
+    )
+    assert await bgg.boardgame_by_name("whatever") is None
+    assert httpx_mock.get_requests()[-1].headers["authorization"] == "Bearer token"
+
+    bgg.logout()
+    httpx_mock.add_response(
+        method="GET",
+        url=f"{bgg._api.xml2}/search?query=whatever&type=boardgame&exact=1",
+        status_code=200,
+        text="<items total=\"0\"></items>",
+    )
+    assert await bgg.boardgame_by_name("whatever") is None
+    assert "authorization" not in httpx_mock.get_requests()[-1].headers
+
+
 def test_user_login_accepts_successful_http_response(httpx_mock):
     httpx_mock.add_response(
         method='POST',

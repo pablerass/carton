@@ -19,8 +19,6 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument('--bgg-password', '-p', type=str, default=os.environ.get('BGG_PASSWORD', None))
     parser.add_argument('--bgg-api-key', type=str, default=os.environ.get('BGG_API_KEY', None),
                         help='Optional BoardGameGeek API key to include on requests')
-    # parser.add_argument('--trello-api-key', type=str, default=os.environ.get('TRELLO_API_KEY', None))
-    # parser.add_argument('--trello-api-token', type=str, default=os.environ.get('TRELLO_API_TOKEN', None))
 
     parser.add_argument('-v', '--verbose', action='count', default=0,
                         help="Display verbose output")
@@ -50,8 +48,8 @@ def main(args=None):
         bgg.api_login(args.bgg_api_key)
 
     # Login only if both user and password were provided
-    #if args.bgg_user and args.bgg_password:
-    #    bgg.user_login(args.bgg_user, args.bgg_password)
+    # if args.bgg_user and args.bgg_password:
+    #     bgg.user_login(args.bgg_user, args.bgg_password)
 
     user_games = asyncio.run(bgg.user_collection(args.bgg_user))
     user_games_df = pd.DataFrame(dict(u) for u in user_games).drop('bgg_id', axis='columns')

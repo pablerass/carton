@@ -44,7 +44,8 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
 
     try:
         polls_summary['suggested_numplayers'] = {
-            value[0]: PlayersInterval.from_list(items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
+            value[0]: PlayersInterval.from_list(
+                items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
             for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
         }
     except ValueError as e:
@@ -150,7 +151,8 @@ class BggProvider:
                              for designer in designer_info]
 
                 polls = _parse_polls(boardgame_response['poll'])
-                poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
+                # TODO: Readd this
+                # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
 
                 min_age = MinAge(boardgame_response['age'])
                 # TUNE: It would be better to execute MinAge validation
