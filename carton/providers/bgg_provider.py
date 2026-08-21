@@ -13,7 +13,7 @@ from ..models.poll import Poll, MultilevelPoll
 
 
 BGG_URL: str = "https://boardgamegeek.com"
-
+BGG_LOGIN_URL: str = "https://boardgamegeek.com/login/api/v1"
 
 _BggApiUrl: namedtuple = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
 
@@ -44,7 +44,8 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
 
     try:
         polls_summary['suggested_numplayers'] = {
-            value[0]: PlayersInterval.from_list(items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
+            value[0]: PlayersInterval.from_list(
+                items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
             for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
         }
     except ValueError as e:
@@ -55,13 +56,60 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
 
 
 class BggProvider:
-    def __init__(self, url: str = BGG_URL):
-        self.__url = url
-        self.__api = _BggApiUrl(
+    def __init__(self, url: str = BGG_URL, api_key: str | None = None) -> None:
+        self.__url: str = url
+        self.__api: str = _BggApiUrl(
             xml=f"{url}/xmlapi",
             xml2=f"{url}/xmlapi2",
             json=f"{url}/api"
         )
+        # Stored auth cookies after successful authentication (None if not authenticated)
+        self.__auth_cookies: dict | None = None
+        self.__auth_headers: dict | None = None
+
+        # If an API key/token is provided at construction time, activate it
+        if api_key:
+            self.api_login(api_key)
+
+    def api_login(self, api_key: str) -> None:
+        """Register an application token for subsequent requests.
+
+        The XML API requires an Authorization header in the format:
+        Authorization: Bearer <token>
+        Accepts either the raw token or a string already prefixed with "Bearer ".
+        """
+        token = api_key.strip()
+        # Allow callers to pass either the raw token or the full 'Bearer <token>' value
+        if token.lower().startswith('bearer '):
+            token = token.split(' ', 1)[1]
+        self.__auth_headers = {'Authorization': f'Bearer {token}'}
+
+    def user_login(self, username: str, password: str) -> None:
+        """Login to BoardGameGeek and store session cookies for subsequent requests.
+
+        Sends a JSON payload {"credentials": {"username": username, "password": password}}
+        to the BGG login endpoint and stores returned cookies in `self.__auth_cookies`.
+        Raises httpx.HTTPStatusError on non-2xx responses or ValueError if the login is rejected.
+        """
+        logger = logging.getLogger('carton.BggProvider.login')
+
+        with httpx.Client() as client:
+            response = client.post(BGG_LOGIN_URL, json={"credentials": {"username": username, "password": password}})
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError:
+                logger.error(f"Authentication request failed with status {response.status_code}: {response.text[:200]}")
+                raise
+
+            # Convert cookies to a simple dict for reuse in future requests
+            self.__auth_cookies = dict(response.cookies)
+
+            logger.debug(f"Authenticated as {username}")
+
+    def logout(self) -> None:
+        """Clear stored authentication cookies."""
+        self.__auth_cookies = None
+        self.__auth_headers = None
 
     @property
     def url(self) -> str:
@@ -73,17 +121,19 @@ class BggProvider:
 
     async def hot(self):
         # TODO: Move the client class level
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             response = await client.get(f"{self._api.xml2}/hot")
+            response.raise_for_status()
             # TODO: Return the right response
             print(response.text)
 
     async def boardgame_by_id(self, id: int | str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_id')
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             response = await client.get(f"{self._api.xml}/boardgame/{id}",
                                         params={'stats': 1})
+            response.raise_for_status()
 
             logger.debug(f"Found game {id}")
             try:
@@ -101,7 +151,8 @@ class BggProvider:
                              for designer in designer_info]
 
                 polls = _parse_polls(boardgame_response['poll'])
-                poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
+                # TODO: Readd this
+                # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
 
                 min_age = MinAge(boardgame_response['age'])
                 # TUNE: It would be better to execute MinAge validation
@@ -181,11 +232,14 @@ class BggProvider:
     async def boardgame_by_name(self, name: str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_name')
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             # TODO: Extract this to a search method
             response = await client.get(
                 f"{self._api.xml2}/search",
-                params={'query': name, 'type': 'boardgame', 'exact': 1})
+                params={'query': name, 'type': 'boardgame', 'exact': 1},
+            )
+
+            response.raise_for_status()
 
             # TUNE: Remove of format better this log line
             logger.debug(f"Found {response.text} games for name {name}")
@@ -213,10 +267,14 @@ class BggProvider:
     async def user_collection(self, user: str):
         logger = logging.getLogger('carton.BggProvider.user_collection')
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             response = await client.get(
                 f"{self._api.xml2}/collection",
-                params={'username': user, 'own': 1})
+                params={'username': user, 'own': 1},
+            )
+
+            response.raise_for_status()
+            print(response.text)
 
             response_items = xmltodict.parse(response.text)['items']
             logger.debug(f"Found {response_items['@totalitems']} games in {user} collection")

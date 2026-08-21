@@ -1,0 +1,59 @@
+[project]
+name = "carton"
+version = "0.1.0a0"
+description = "A tool to create print and play card games"
+readme = "README.md"
+authors = [{name = "Pablo Muñoz", email = "pablerass@gmail.com"}]
+license = "LGPL-3.0-or-later"
+homepage = "https://github.com/pablerass/carton"
+keywords = ["PnP", "card", "board", "game", "print"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: FastAPI",
+  "Intended Audience :: End Users/Desktop",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Games/Entertainment :: Board Games",
+  "Typing :: Typed"
+]
+requires-python = ">=3.14"
+dependencies = [
+  "cartucho",
+  "pandas",
+  "fastapi",
+  "aiohttp",
+  "aiometer",
+  "sqlmodel",
+  "pydantic",
+  "xmltodict",
+]
+
+[project.scripts]
+carton = "carton.__main__:main"
+
+[tool.poetry.group.test.dependencies]
+pytest = "*"
+pytest-httpx = "*"
+pytest-asyncio = "*"
+pytest-unordered = "*"
+flake8 = "*"
+coverage = "*"
+mypy = "*"
+types-setuptools = "*"
+types-xmltodict = "*"
+pandas-stubs = "*"
+
+[tool.poetry.group.dev.dependencies]
+bumpver = "*"
+ipython = "*"
+ipdb = "*"
+build = "*"
+uvicorn = "*"
+
+[[tool.poetry.packages]]
+include = "carton"
+
+[build-system]
+requires = ["poetry-core>=1.5.0"]
+build-backend = "poetry.core.masonry.api"

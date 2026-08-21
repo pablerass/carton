@@ -2,7 +2,7 @@
 #
 # from pytest_httpx import HTTPXMock
 #
-from carton.models import Players
+from carton.models.params import PlayersInterval
 from carton.models.poll import Poll, MultilevelPoll
 from carton.providers.bgg_provider import _parse_polls, _parse_polls_summary
 
@@ -160,8 +160,8 @@ def test_parse_poll_summary():
 
     assert _parse_polls_summary(poll_summary_response) == {
         'suggested_numplayers': {
-            'Best': Players(lower=4, upper=5),
-            'Recommended': Players(lower=3, upper=7)
+            'Best': PlayersInterval(lower=4, upper=5),
+            'Recommended': PlayersInterval(lower=3, upper=7)
         }
     }
 

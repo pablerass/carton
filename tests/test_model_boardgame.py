@@ -22,7 +22,7 @@ def test_board_game():
         name="Ra",
         designers=[designer],
         min_age=MinAge(12),
-        players=Players(interval=[PlayersInterval(lower=2, upper=5)]),
+        players=Players(intervals=[PlayersInterval(lower=2, upper=5)]),
         play_time=PlayTime(lower=45, upper=60),
     )
 
