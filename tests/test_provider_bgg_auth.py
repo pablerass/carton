@@ -4,23 +4,24 @@ from httpx import HTTPStatusError
 from carton.providers.bgg_provider import BggProvider, BGG_LOGIN_URL
 
 
-def test_authenticate_stores_cookies(httpx_mock):
-    # Mock the login response to set a cookie and return a success JSON body
+@pytest.fixture(autouse=True)
+def disable_proxy_environment(monkeypatch):
+    for variable in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                     "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(variable, raising=False)
+
+
+async def test_user_login_stores_cookies_and_reuses_them(httpx_mock):
     httpx_mock.add_response(
         method='POST',
         url=BGG_LOGIN_URL,
         status_code=200,
-        json={"success": True},
         headers={"set-cookie": "sessionid=abc; Path=/; HttpOnly"},
     )
 
     bgg = BggProvider()
-    bgg.login("alice", "secret")
+    bgg.user_login("alice", "secret")
 
-    # Cookie should be stored as a dict
-    assert bgg._cookies == {"sessionid": "abc"}
-
-    # Add a mocked GET endpoint and call an API method to ensure the cookie is sent
     httpx_mock.add_response(
         method='GET',
         url=f"{bgg._api.xml2}/search?query=whatever&type=boardgame&exact=1",
@@ -28,18 +29,21 @@ def test_authenticate_stores_cookies(httpx_mock):
         text="<items total=\"0\"></items>",
     )
 
-    bgg.boardgame_by_name("whatever")
+    assert await bgg.boardgame_by_name("whatever") is None
 
-    # Inspect recorded requests: ensure the GET request contains a Cookie header
     reqs = httpx_mock.get_requests()
     get_reqs = [r for r in reqs if r.method == "GET"]
     assert get_reqs, "No GET requests were recorded"
     last_get = get_reqs[-1]
-    assert any(h.lower() == "cookie" for h in last_get.headers.keys()), "Cookie header not sent on authenticated request"
+    assert last_get.headers.get("cookie") == "sessionid=abc"
+    assert dict(last_get.url.params) == {
+        "query": "whatever",
+        "type": "boardgame",
+        "exact": "1",
+    }
 
 
-def test_authenticate_rejected_body_raises(httpx_mock):
-    # Server returns 200 but body indicates rejection
+def test_user_login_accepts_successful_http_response(httpx_mock):
     httpx_mock.add_response(
         method='POST',
         url=BGG_LOGIN_URL,
@@ -48,8 +52,10 @@ def test_authenticate_rejected_body_raises(httpx_mock):
     )
 
     bgg = BggProvider()
-    with pytest.raises(ValueError):
-        bgg.login("bob", "wrong")
+    bgg.user_login("bob", "wrong")
+
+    request = httpx_mock.get_requests()[0]
+    assert request.content == b'{"credentials":{"username":"bob","password":"wrong"}}'
 
 
 def test_authenticate_http_error_raises(httpx_mock):
@@ -63,4 +69,4 @@ def test_authenticate_http_error_raises(httpx_mock):
 
     bgg = BggProvider()
     with pytest.raises(HTTPStatusError):
-        bgg.login("eve", "bad")
+        bgg.user_login("eve", "bad")

@@ -120,8 +120,8 @@ class BggProvider:
 
     async def hot(self):
         # TODO: Move the client class level
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{self._api.xml2}/hot", cookies=self.__auth_cookies, headers=self.__auth_headers)
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
+            response = await client.get(f"{self._api.xml2}/hot")
             response.raise_for_status()
             # TODO: Return the right response
             print(response.text)
@@ -129,11 +129,9 @@ class BggProvider:
     async def boardgame_by_id(self, id: int | str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_id')
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             response = await client.get(f"{self._api.xml}/boardgame/{id}",
-                                        params={'stats': 1},
-                                        cookies=self.__auth_cookies,
-                                        headers=self.__auth_headers)
+                                        params={'stats': 1})
             response.raise_for_status()
 
             logger.debug(f"Found game {id}")
@@ -232,13 +230,12 @@ class BggProvider:
     async def boardgame_by_name(self, name: str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_name')
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             # TODO: Extract this to a search method
             response = await client.get(
                 f"{self._api.xml2}/search",
                 params={'query': name, 'type': 'boardgame', 'exact': 1},
-                cookies=self.__auth_cookies,
-                headers=self.__auth_headers)
+            )
 
             response.raise_for_status()
 
@@ -268,12 +265,11 @@ class BggProvider:
     async def user_collection(self, user: str):
         logger = logging.getLogger('carton.BggProvider.user_collection')
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
             response = await client.get(
                 f"{self._api.xml2}/collection",
                 params={'username': user, 'own': 1},
-                cookies=self.__auth_cookies,
-                headers=self.__auth_headers)
+            )
 
             response.raise_for_status()
             print(response.text)

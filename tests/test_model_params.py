@@ -1,8 +1,9 @@
 import pytest
 
-from pydantic import ValidationError
+from pydantic import PositiveInt, ValidationError
 
-from carton.models.params import Interval, PositiveInt, PlayersInterval, Players, PlayTime, MinAge
+from carton.models.intervals import Interval, Intervals
+from carton.models.params import MinAge, Players, PlayersInterval, PlayTime
 
 
 def test_intervals():
@@ -19,6 +20,7 @@ def test_intervals():
 def test_players():
     players_interval = PlayersInterval(lower=1, upper=4)
     assert str(players_interval) == '1-4'
+    assert isinstance(Players(intervals=[players_interval]), Intervals)
     assert str(Players(intervals=[players_interval])) == '1-4'
 
     assert str(Players.from_list([[1, 4, 3]])) == '1-4'
