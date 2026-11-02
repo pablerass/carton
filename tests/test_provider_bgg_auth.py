@@ -1,7 +1,7 @@
 import pytest
 from httpx import HTTPStatusError
 
-from carton.providers.bgg_provider import BggProvider, BGG_LOGIN_URL
+from carton.providers.bgg_provider import BGG_LOGIN_URL, BggProvider
 
 
 @pytest.fixture(autouse=True)
@@ -21,6 +21,9 @@ async def test_user_login_stores_cookies_and_reuses_them(httpx_mock):
 
     bgg = BggProvider()
     bgg.user_login("alice", "secret")
+
+    # Cookie should be stored as a dict
+    assert bgg._auth_cookies == {"sessionid": "abc"}
 
     httpx_mock.add_response(
         method='GET',
@@ -81,7 +84,7 @@ def test_user_login_accepts_successful_http_response(httpx_mock):
     assert request.content == b'{"credentials":{"username":"bob","password":"wrong"}}'
 
 
-def test_authenticate_http_error_raises(httpx_mock):
+def test_user_login_http_error_raises(httpx_mock):
     # Server returns an HTTP error status
     httpx_mock.add_response(
         method='POST',

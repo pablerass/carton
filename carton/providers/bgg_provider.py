@@ -1,21 +1,32 @@
-import aiometer
-import httpx
+import asyncio
 import logging
-import xmltodict
-
 from collections import namedtuple
 from functools import partial
+from typing import Self
+
+import aiometer
+import httpx
+import xmltodict
 from pydantic import ValidationError
 
-from ..models.boardgame import BGGGame, BGGDesigner
-from ..models.params import Players, PlayersInterval, PlayTime, MinAge, Year
-from ..models.poll import Poll, MultilevelPoll
+from ..models.boardgame import BGGDesigner, BGGGame
+from ..models.params import MinAge, Players, PlayersInterval, PlayTime, Year
+from ..models.poll import MultilevelPoll, Poll
 
+BggApiUrlMap = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
 
 BGG_URL: str = "https://boardgamegeek.com"
 BGG_LOGIN_URL: str = "https://boardgamegeek.com/login/api/v1"
 
-_BggApiUrl: namedtuple = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
+# Retry policy for 202 Accepted responses, returned by BGG while a request is queued
+BGG_ACCEPTED_RETRIES: int = 5
+BGG_ACCEPTED_DELAY: float = 2.0  # Seconds, doubled on each retry
+
+BGG_API_URLS: BggApiUrlMap = BggApiUrlMap(
+    xml=f"{BGG_URL}/xmlapi",
+    xml2=f"{BGG_URL}/xmlapi2",
+    json=f"{BGG_URL}/api"
+)
 
 
 def _parse_polls(polls_response: list[dict]) -> dict[str, Poll]:
@@ -42,30 +53,25 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
     polls_summary = {poll_summary['@name']: poll_summary['result']
                      for poll_summary in polls_summary_response}
 
-    try:
-        polls_summary['suggested_numplayers'] = {
-            value[0]: PlayersInterval.from_list(
-                items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
-            for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
-        }
-    except ValueError as e:
-        print(polls_summary_response)
-        raise e
+    polls_summary['suggested_numplayers'] = {
+        value[0]: PlayersInterval.from_list(
+            items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
+        for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
+    }
 
     return polls_summary
 
 
 class BggProvider:
-    def __init__(self, url: str = BGG_URL, api_key: str | None = None) -> None:
+    def __init__(self, url: str = BGG_URL, api_key: str | None = None,
+                 api_urls: BggApiUrlMap = BGG_API_URLS) -> None:
         self.__url: str = url
-        self.__api: str = _BggApiUrl(
-            xml=f"{url}/xmlapi",
-            xml2=f"{url}/xmlapi2",
-            json=f"{url}/api"
-        )
+        self.__api: BggApiUrlMap = api_urls
+
         # Stored auth cookies after successful authentication (None if not authenticated)
         self.__auth_cookies: dict | None = None
         self.__auth_headers: dict | None = None
+        self.__client: httpx.AsyncClient | None = None
 
         # If an API key/token is provided at construction time, activate it
         if api_key:
@@ -88,7 +94,7 @@ class BggProvider:
         """Login to BoardGameGeek and store session cookies for subsequent requests.
 
         Sends a JSON payload {"credentials": {"username": username, "password": password}}
-        to the BGG login endpoint and stores returned cookies in `self.__auth_cookies`.
+        to the BGG login endpoint and stores returned cookies in `self._auth_cookies`.
         Raises httpx.HTTPStatusError on non-2xx responses or ValueError if the login is rejected.
         """
         logger = logging.getLogger('carton.BggProvider.login')
@@ -107,180 +113,240 @@ class BggProvider:
             logger.debug(f"Authenticated as {username}")
 
     def logout(self) -> None:
-        """Clear stored authentication cookies."""
+        """Clear stored authentication and remove it from the HTTP client, if already created."""
+        if self.__client is not None:
+            for header in self.__auth_headers or {}:
+                self.__client.headers.pop(header, None)
+            for cookie in self.__auth_cookies or {}:
+                self.__client.cookies.delete(cookie)
+
         self.__auth_cookies = None
         self.__auth_headers = None
+
+    @property
+    def _api(self) -> BggApiUrlMap:
+        return self.__api
 
     @property
     def url(self) -> str:
         return self.__url
 
     @property
-    def _api(self) -> str:
-        return self.__api
+    def _auth_cookies(self) -> dict | None:
+        return self.__auth_cookies
+
+    @property
+    def _auth_headers(self) -> dict | None:
+        return self.__auth_headers
+
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        """Shared HTTP client, so all requests reuse the same connection pool.
+
+        The client is created on first use and the current auth is added on every
+        access, so a later login applies to it. Logout removes it in `logout`.
+        """
+        if self.__client is None:
+            self.__client = httpx.AsyncClient()
+
+        if self._auth_headers:
+            self.__client.headers.update(self._auth_headers)
+        if self._auth_cookies:
+            self.__client.cookies.update(self._auth_cookies)
+
+        return self.__client
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client. A new one is created if the provider is used again."""
+        if self.__client is not None:
+            await self.__client.aclose()
+            self.__client = None
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        await self.aclose()
+
+    async def _get(self, url: str, params: dict | None = None,
+                   retries: int = BGG_ACCEPTED_RETRIES,
+                   delay: float = BGG_ACCEPTED_DELAY) -> httpx.Response:
+        """GET a BGG API URL, retrying with exponential backoff while BGG answers 202 Accepted.
+
+        BGG returns 202 when a request has been queued for processing (e.g. large
+        collections) and the actual data has to be requested again later.
+        """
+        logger = logging.getLogger('carton.BggProvider._get')
+
+        for attempt in range(retries + 1):
+            response = await self._client.get(url, params=params)
+            response.raise_for_status()
+
+            if response.status_code != 202:
+                return response
+
+            if attempt < retries:
+                wait = delay * 2 ** attempt
+                logger.debug(f"Request to {url} queued by BGG, retrying in {wait}s")
+                await asyncio.sleep(wait)
+
+        raise TimeoutError(f"BGG kept the request to {url} queued after {retries} retries")
 
     async def hot(self):
-        # TODO: Move the client class level
-        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
-            response = await client.get(f"{self._api.xml2}/hot")
-            response.raise_for_status()
-            # TODO: Return the right response
-            print(response.text)
+        response = await self._get(f"{self._api.xml2}/hot")
+        # TODO: Return the right response
+        print(response.text)
 
     async def boardgame_by_id(self, id: int | str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_id')
 
-        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
-            response = await client.get(f"{self._api.xml}/boardgame/{id}",
-                                        params={'stats': 1})
-            response.raise_for_status()
+        response = await self._get(
+            f"{self._api.xml}/boardgame/{id}",
+            params={'stats': 1})
 
-            logger.debug(f"Found game {id}")
+        logger.debug(f"Found game {id}")
+        try:
+            boardgame_response = xmltodict.parse(response.text)['boardgames']['boardgame']
+
+            name_info = boardgame_response['name']
+            if not isinstance(name_info, list):
+                name_info = [name_info]
+            name = next(name['#text'] for name in name_info if name.get('@primary', False))
+
+            designer_info = boardgame_response['boardgamedesigner']
+            if not isinstance(designer_info, list):
+                designer_info = [designer_info]
+            designers = [BGGDesigner(name=designer['#text'], bgg_id=designer['@objectid'])
+                         for designer in designer_info]
+
+            polls = _parse_polls(boardgame_response['poll'])
+            # TODO: Readd this
+            # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
+
+            min_age = MinAge(boardgame_response['age'])
+            # TUNE: It would be better to execute MinAge validation
+            if not 0 < min_age:
+                min_age = None
+                logger.warning(f'Unable to obtain min_age for {name}')
+
+            players = None
             try:
-                boardgame_response = xmltodict.parse(response.text)['boardgames']['boardgame']
+                players = Players(lower=boardgame_response['minplayers'],
+                                  upper=boardgame_response['maxplayers'])
+            except ValidationError:
+                logger.warning(f'Unable to obtain players for {name}')
 
-                name_info = boardgame_response['name']
-                if not isinstance(name_info, list):
-                    name_info = [name_info]
-                name = [name['#text'] for name in name_info if name.get('@primary', False)][0]
+            play_time = None
+            try:
+                play_time = PlayTime(lower=boardgame_response['minplaytime'],
+                                     upper=boardgame_response['maxplaytime'])
+            except ValidationError:
+                logger.warning(f'Unable to obtain play_time for {name}')
 
-                designer_info = boardgame_response['boardgamedesigner']
-                if not isinstance(designer_info, list):
-                    designer_info = [designer_info]
-                designers = [BGGDesigner(name=designer['#text'], bgg_id=designer['@objectid'])
-                             for designer in designer_info]
+            published = None
+            try:
+                published = Year(boardgame_response['yearpublished'])
+            except ValidationError:
+                logger.warning(f'Unable to obtain year for {name}')
 
-                polls = _parse_polls(boardgame_response['poll'])
-                # TODO: Readd this
-                # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
+            community_min_age = None
+            try:
+                poll_values = polls['suggested_playerage'].winner()
+                community_min_age = MinAge(poll_values)
+            except ValidationError:
+                logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
 
-                min_age = MinAge(boardgame_response['age'])
-                # TUNE: It would be better to execute MinAge validation
-                if not 0 < min_age:
-                    min_age = None
-                    logger.warning(f'Unable to obtain min_age for {name}')
-
-                players = None
+            # TODO: Load community info as set of values instead of interval
+            community_players = None
+            community_best_players = None
+            if 'suggested_playernum' in polls:
                 try:
-                    players = Players(lower=boardgame_response['minplayers'],
-                                      upper=boardgame_response['maxplayers'])
+                    poll_players = polls['suggested_playernum']
+                    poll_values = (poll_players.choice_2_poll('Best') +
+                                   poll_players.choice_2_poll('Recommended')).winners()
+                    community_players = Players.from_list(poll_values)
                 except ValidationError:
-                    logger.warning(f'Unable to obtain players for {name}')
+                    logger.warning(f'Unable to obtain community_players with {poll_values} for {name}')
 
-                play_time = None
                 try:
-                    play_time = PlayTime(lower=boardgame_response['minplaytime'],
-                                         upper=boardgame_response['maxplaytime'])
+                    poll_values = poll_players.winners('Best')
+                    community_best_players = Players.from_list(poll_values)
                 except ValidationError:
-                    logger.warning(f'Unable to obtain play_time for {name}')
+                    logger.warning(f'Unable to obtain community_best_players with {poll_values} for {name}')
 
-                published = None
-                try:
-                    published = Year(boardgame_response['yearpublished'])
-                except ValidationError:
-                    logger.warning(f'Unable to obtain year for {name}')
+            # from pprint import pprint
+            # pprint(boardgame_response)
+            community_average_weight = boardgame_response['statistics']['ratings']['averageweight']
 
-                community_min_age = None
-                try:
-                    poll_values = polls['suggested_playerage'].winner()
-                    community_min_age = MinAge(poll_values)
-                except ValidationError:
-                    logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
+            boardgame = BGGGame(
+                name=name,
+                designers=designers,
+                min_age=min_age,
+                players=players,
+                play_time=play_time,
+                published=published,
+                bgg_id=id,
+                community_min_age=community_min_age,
+                community_players=community_players,
+                community_best_players=community_best_players,
+                community_average_weight=community_average_weight
+            )
+        except Exception:
+            logger.error(f"Error obtaining {id} boardgame from response")
+            raise
 
-                # TODO: Load community info as set of values instead of interval
-                community_players = None
-                community_best_players = None
-                if 'suggested_playernum' in polls:
-                    try:
-                        poll_players = polls['suggested_playernum']
-                        poll_values = (poll_players.choice_2_poll('Best') +
-                                       poll_players.choice_2_poll('Recommended')).winners()
-                        community_players = Players.from_list(poll_values)
-                    except ValidationError:
-                        logger.warning(f'Unable to obtain community_players with {poll_values} for {name}')
-
-                    try:
-                        poll_values = poll_players.winners('Best')
-                        community_best_players = Players.from_list(poll_values)
-                    except ValidationError:
-                        logger.warning(f'Unable to obtain community_best_players with {poll_values} for {name}')
-
-                from pprint import pprint
-                pprint(boardgame_response)
-                community_average_weight = boardgame_response['statistics']['ratings']['averageweight']
-
-                boardgame = BGGGame(
-                    name=name,
-                    designers=designers,
-                    min_age=min_age,
-                    players=players,
-                    play_time=play_time,
-                    published=published,
-                    bgg_id=id,
-                    community_min_age=community_min_age,
-                    community_players=community_players,
-                    community_best_players=community_best_players,
-                    community_average_weight=community_average_weight
-                )
-            except Exception as e:
-                logger.error(f"Error obtaining {id} boardgame from response")
-                raise e
-
-            logger.info(f"Obtained boardgame {boardgame.name} with id {id}")
-            return boardgame
+        logger.info(f"Obtained boardgame {boardgame.name} with id {id}")
+        return boardgame
 
     async def boardgame_by_name(self, name: str) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_name')
 
-        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
-            # TODO: Extract this to a search method
-            response = await client.get(
-                f"{self._api.xml2}/search",
-                params={'query': name, 'type': 'boardgame', 'exact': 1},
-            )
+        # TODO: Extract this to a search method
+        response = await self._get(
+            f"{self._api.xml2}/search",
+            params={'query': name, 'type': 'boardgame', 'exact': 1})
 
-            response.raise_for_status()
+        # TUNE: Remove of format better this log line
+        logger.debug(f"Found {response.text} games for name {name}")
+        try:
+            response_items = xmltodict.parse(response.text)['items']
+            match (int(response_items['@total'])):
+                case 0:
+                    # TUNE: Return none if no game was found
+                    logger.warning(f"No boardgame found for '{name}'")
+                    return None
+                case 1:
+                    boardgame_id = response_items['item']['@id']
+                case _:
+                    # TUNE: At the moment, return the first one. This happens in
+                    # games with multiple versions such as Citadels
+                    logger.warning(f"More than one boardgame found for '{name}'")
+                    boardgame_id = response_items['item'][0]['@id']
+        except Exception:
+            logger.error(f"Error obtaining '{name}' boardgame id from response {response.text}")
+            raise
 
-            # TUNE: Remove of format better this log line
-            logger.debug(f"Found {response.text} games for name {name}")
-            try:
-                response_items = xmltodict.parse(response.text)['items']
-                match (int(response_items['@total'])):
-                    case 0:
-                        # TUNE: Return none if no game was found
-                        logger.warning(f"No boardgame found for '{name}'")
-                        return None
-                    case 1:
-                        boardgame_id = response_items['item']['@id']
-                    case _:
-                        # TUNE: At the moment, return the first one. This happens in
-                        # games with multiple versions such as Citadels
-                        logger.warning(f"More than one boardgame found for '{name}'")
-                        boardgame_id = response_items['item'][0]['@id']
-            except Exception as e:
-                logger.error(f"Error obtaining '{name}' boardgame id from response {response.text}")
-                raise e
+        logger.info(f"Obtained {boardgame_id} for '{name}' boardgame")
+        return await self.boardgame_by_id(boardgame_id)
 
-            logger.info(f"Obtained {boardgame_id} for '{name}' boardgame")
-            return await self.boardgame_by_id(boardgame_id)
+    async def _user_collection_ids(self, user: str) -> list[int]:
+        # TUNE: Include retries for rate limits (429)
+        response = await self._get(
+            f"{self._api.xml2}/collection",
+            params={'username': user, 'own': 1, 'brief': 1})
+
+        response_items = xmltodict.parse(response.text)['items']
+
+        boardgame_ids = [i['@objectid'] for i in response_items['item']
+                         if i['@subtype'] in ('boardgame', 'boardgameexpansion')]
+        return boardgame_ids
 
     async def user_collection(self, user: str):
         logger = logging.getLogger('carton.BggProvider.user_collection')
 
-        async with httpx.AsyncClient(cookies=self.__auth_cookies, headers=self.__auth_headers) as client:
-            response = await client.get(
-                f"{self._api.xml2}/collection",
-                params={'username': user, 'own': 1},
-            )
-
-            response.raise_for_status()
-            print(response.text)
-
-            response_items = xmltodict.parse(response.text)['items']
-            logger.debug(f"Found {response_items['@totalitems']} games in {user} collection")
-
-            boardgame_ids = [i['@objectid'] for i in response_items['item'] if i['@subtype'] == 'boardgame']
-            return await aiometer.run_all(
-                [partial(self.boardgame_by_id, id) for id in boardgame_ids],
-                max_at_once=20,
-                max_per_second=10)
+        boardgame_ids = await self._user_collection_ids(user)
+        logger.debug(f"Found {len(boardgame_ids)} games and expansions in {user} collection")
+        return await aiometer.run_all(
+            [partial(self.boardgame_by_id, id) for id in boardgame_ids],
+            max_at_once=20,
+            max_per_second=10)

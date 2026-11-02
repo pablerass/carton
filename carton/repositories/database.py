@@ -1,7 +1,6 @@
 from sqlmodel import Session
 
-from ..model.boardgame import Designer, BoardGame
-
+from ..model.boardgame import BoardGame, Designer
 
 # TODO: Think about removing all this
 
@@ -24,7 +23,7 @@ class BoardGamesRepository:
             self._session.add(b)
 
 
-class DesignersRepository():
+class DesignersRepository:
     def add(self, designer: Designer | list[Designer]):
         if isinstance(designer, Designer):
             designer = [designer]

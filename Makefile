@@ -18,19 +18,19 @@ clean-build:
 	rm --force --recursive *.egg-info
 
 build:
-	poetry build
+	uv build
 
 lint:
-	poetry run flake8
+	uv run ruff check
 
 type-check:
-	poetry run mypy .
+	uv run ty check
 
 test:
-	poetry run pytest
+	uv run pytest
 
 test-coverage:
-	poetry run coverage run --source carton -m pytest
-	poetry run coverage report -m
+	uv run coverage run --source carton -m pytest
+	uv run coverage report -m
 
 test-all: lint type-check test-coverage

@@ -4,7 +4,6 @@ from pydantic import PositiveInt
 
 from .intervals import Interval, Intervals
 
-
 PlayersInterval = Interval[PositiveInt]
 Players = Intervals[PositiveInt]
 PlayTime = Interval[PositiveInt]

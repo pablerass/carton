@@ -2,21 +2,21 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, PositiveInt
 
-from .params import Players, PlayTime, MinAge, Year
+from .params import MinAge, Players, PlayTime, Year
 
 
 class BoardGame(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    designers: set['Designer'] = set()
+    designers: set[Designer] = set()
     min_age: MinAge | None = None
     players: Players | None = None
     play_time: PlayTime | None = None
     published: Year | None = None
     # TODO: Add expansions relation
 
-    def model_post_init(self, __context):
+    def model_post_init(self, context, /):
         for d in self.designers:
             d.boardgames.add(self)
 

@@ -1,9 +1,9 @@
 import pytest
-
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
 from carton.models import *
+
 
 @pytest.fixture
 def db_session():

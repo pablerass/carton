@@ -3,7 +3,7 @@
 # from pytest_httpx import HTTPXMock
 #
 from carton.models.params import PlayersInterval
-from carton.models.poll import Poll, MultilevelPoll
+from carton.models.poll import MultilevelPoll, Poll
 from carton.providers.bgg_provider import _parse_polls, _parse_polls_summary
 
 

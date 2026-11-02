@@ -1,10 +1,8 @@
 import pytest
-
+from pydantic import ValidationError
 from pytest_unordered import unordered
 
-from pydantic import ValidationError
-
-from carton.models.poll import Poll, MultilevelPoll
+from carton.models.poll import MultilevelPoll, Poll
 
 
 def test_poll_validations():
