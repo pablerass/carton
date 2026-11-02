@@ -5,8 +5,8 @@ description = "A tool to create print and play card games"
 readme = "README.md"
 authors = [{name = "Pablo Muñoz", email = "pablerass@gmail.com"}]
 license = "LGPL-3.0-or-later"
-homepage = "https://github.com/pablerass/carton"
-keywords = ["PnP", "card", "board", "game", "print"]
+license-files = ["LICENSE.txt"]
+keywords = ["card", "board", "game"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Web Environment",
@@ -14,6 +14,7 @@ classifiers = [
   "Intended Audience :: End Users/Desktop",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Games/Entertainment :: Board Games",
   "Typing :: Typed"
 ]
@@ -29,31 +30,39 @@ dependencies = [
   "xmltodict",
 ]
 
+[project.urls]
+Homepage = "https://github.com/pablerass/carton"
+
 [project.scripts]
 carton = "carton.__main__:main"
 
-[tool.poetry.group.test.dependencies]
-pytest = "*"
-pytest-httpx = "*"
-pytest-asyncio = "*"
-pytest-unordered = "*"
-flake8 = "*"
-coverage = "*"
-mypy = "*"
-types-setuptools = "*"
-types-xmltodict = "*"
-pandas-stubs = "*"
+[dependency-groups]
+test = [
+  "pytest",
+  "pytest-httpx",
+  "pytest-asyncio",
+  "pytest-unordered",
+  "flake8",
+  "coverage",
+  "mypy",
+  "types-setuptools",
+  "types-xmltodict",
+  "pandas-stubs",
+]
+dev = [
+  {include-group = "test"},
+  "bumpver",
+  "ipython",
+  "ipdb",
+  "uvicorn",
+]
 
-[tool.poetry.group.dev.dependencies]
-bumpver = "*"
-ipython = "*"
-ipdb = "*"
-build = "*"
-uvicorn = "*"
-
-[[tool.poetry.packages]]
-include = "carton"
+[tool.uv]
+default-groups = ["dev"]
 
 [build-system]
-requires = ["poetry-core>=1.5.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.9,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = ""
