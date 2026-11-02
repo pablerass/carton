@@ -2,7 +2,7 @@
 # annotations are not properly supported in current SQLAlchemy and Pydantic versions
 # https://github.com/tiangolo/sqlmodel/issues/196
 
-from sqlmodel import Field, SQLModel, Relationship
+from sqlmodel import Field, Relationship, SQLModel
 
 from .boardgame import BoardGame
 
@@ -17,7 +17,7 @@ class Club(SQLModel, table=True):
 
 
 class SessionBoardGameVotes(SQLModel, table=True):
-    user: 'User' = Relationship()
+    user: User = Relationship()
     session: str
 
 
@@ -29,6 +29,6 @@ class SessionBoardGames(SQLModel, table=True):
 
 class Session(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    creator: 'User' = Relationship()
+    creator: User = Relationship()
     available_games: list[BoardGame] = Relationship
     open: bool = Field(default=False)

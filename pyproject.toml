@@ -42,12 +42,12 @@ test = [
   "pytest-httpx",
   "pytest-asyncio",
   "pytest-unordered",
-  "flake8",
   "coverage",
-  "mypy",
   "types-setuptools",
   "types-xmltodict",
   "pandas-stubs",
+  "ty",
+  "ruff",
 ]
 dev = [
   {include-group = "test"},
@@ -64,5 +64,36 @@ default-groups = ["dev"]
 requires = ["uv_build>=0.9,<0.14"]
 build-backend = "uv_build"
 
+[tool.ruff]
+line-length = 120
+extend-exclude = ["docs"]
+
 [tool.uv.build-backend]
 module-root = ""
+
+[tool.pytest.ini_options]
+addopts = "--pdbcls=IPython.terminal.debugger:TerminalPdb"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["."]
+omit = [".venv/*", "conftest.py", "build/*", "dist/*", "docs/*", "tests/*", ".tox/*"]
+
+[tool.coverage.report]
+fail_under = 70
+
+[tool.bumpver]
+current_version = "v0.1.0a0"
+version_pattern = "vMAJOR.MINOR.PATCH[PYTAGNUM]"
+commit_message = "bump version {old_version} -> {new_version}"
+commit = true
+tag = true
+push = false
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+  '^current_version = "{version}"$',
+  '^version = "{pep440_version}"$',
+]
+"carton/__init__.py" = ["__version__ = '{pep440_version}'"]

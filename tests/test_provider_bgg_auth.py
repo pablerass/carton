@@ -1,7 +1,7 @@
 import pytest
 from httpx import HTTPStatusError
 
-from carton.providers.bgg_provider import BggProvider, BGG_LOGIN_URL
+from carton.providers.bgg_provider import BGG_LOGIN_URL, BggProvider
 
 
 @pytest.fixture(autouse=True)

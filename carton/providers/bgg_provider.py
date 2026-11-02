@@ -1,17 +1,17 @@
-import aiometer
 import asyncio
-import httpx
 import logging
-import xmltodict
-
 from collections import namedtuple
 from functools import partial
+from typing import Self
+
+import aiometer
+import httpx
+import xmltodict
 from pydantic import ValidationError
 
-from ..models.boardgame import BGGGame, BGGDesigner
-from ..models.params import Players, PlayersInterval, PlayTime, MinAge, Year
-from ..models.poll import Poll, MultilevelPoll
-
+from ..models.boardgame import BGGDesigner, BGGGame
+from ..models.params import MinAge, Players, PlayersInterval, PlayTime, Year
+from ..models.poll import MultilevelPoll, Poll
 
 BggApiUrlMap = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
 
@@ -53,15 +53,11 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
     polls_summary = {poll_summary['@name']: poll_summary['result']
                      for poll_summary in polls_summary_response}
 
-    try:
-        polls_summary['suggested_numplayers'] = {
-            value[0]: PlayersInterval.from_list(
-                items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
-            for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
-        }
-    except ValueError as e:
-        # print(polls_summary_response)
-        raise e
+    polls_summary['suggested_numplayers'] = {
+        value[0]: PlayersInterval.from_list(
+            items=[int(n) for n in value[2].split('–')])  # WARN: Not a standard hyphen '-'
+        for value in [result['@value'].split(' ') for result in polls_summary['suggested_numplayers']]
+    }
 
     return polls_summary
 
@@ -166,7 +162,7 @@ class BggProvider:
             await self.__client.aclose()
             self.__client = None
 
-    async def __aenter__(self) -> 'BggProvider':
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info) -> None:
@@ -215,7 +211,7 @@ class BggProvider:
             name_info = boardgame_response['name']
             if not isinstance(name_info, list):
                 name_info = [name_info]
-            name = [name['#text'] for name in name_info if name.get('@primary', False)][0]
+            name = next(name['#text'] for name in name_info if name.get('@primary', False))
 
             designer_info = boardgame_response['boardgamedesigner']
             if not isinstance(designer_info, list):
@@ -295,9 +291,9 @@ class BggProvider:
                 community_best_players=community_best_players,
                 community_average_weight=community_average_weight
             )
-        except Exception as e:
+        except Exception:
             logger.error(f"Error obtaining {id} boardgame from response")
-            raise e
+            raise
 
         logger.info(f"Obtained boardgame {boardgame.name} with id {id}")
         return boardgame
@@ -326,9 +322,9 @@ class BggProvider:
                     # games with multiple versions such as Citadels
                     logger.warning(f"More than one boardgame found for '{name}'")
                     boardgame_id = response_items['item'][0]['@id']
-        except Exception as e:
+        except Exception:
             logger.error(f"Error obtaining '{name}' boardgame id from response {response.text}")
-            raise e
+            raise
 
         logger.info(f"Obtained {boardgame_id} for '{name}' boardgame")
         return await self.boardgame_by_id(boardgame_id)

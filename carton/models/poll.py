@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Sequence, Callable
 from collections import defaultdict
-from pydantic import BaseModel, ConfigDict, model_validator, ValidationError
+from collections.abc import Callable, Sequence
+
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 
 class Poll[T](BaseModel):
@@ -25,7 +26,7 @@ class Poll[T](BaseModel):
 
         return self
 
-    def model_post_init(self, __context):
+    def model_post_init(self, context, /):
         if not isinstance(self.votes, defaultdict):
             self.votes = defaultdict(int, self.votes)
 
@@ -121,7 +122,7 @@ class MultilevelPoll[T, U](BaseModel):
 
         return self
 
-    def model_post_init(self, __context):
+    def model_post_init(self, context, /):
         if not isinstance(self.votes, defaultdict):
             self.votes = defaultdict(lambda x: defaultdict(int), self.votes)
 
@@ -130,7 +131,7 @@ class MultilevelPoll[T, U](BaseModel):
 
         if self.choices_2 is None:
             self.choices_2 = set()
-            for _, v in self.votes.items():
+            for v in self.votes.values():
                 self.choices_2 |= set(v.keys())
 
         if set(self.choices_1) != set(self.votes.keys()):
@@ -153,10 +154,10 @@ class MultilevelPoll[T, U](BaseModel):
         if set(votes.keys()) - set(self.choices_1):
             raise ValidationError('vote choices_1 do not match with poll choices_1')
 
-        for choice_1 in votes.keys():
-            if set(votes[choice_1].keys()) - set(self.choices_2):
+        for choice_1, choice_1_votes in votes.items():
+            if set(choice_1_votes.keys()) - set(self.choices_2):
                 raise ValidationError(f'vote {choice_1} choices_2 do not match with poll choices_2')
-            self.votes[choice_1] |= votes[choice_1]
+            self.votes[choice_1] |= choice_1_votes
 
     def _choice_2_votes(self, choice_2: U) -> dict[T, int]:
         return {k: v.get(choice_2, 0) for k, v in self.votes.items()}

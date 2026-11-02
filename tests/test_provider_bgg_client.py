@@ -1,8 +1,7 @@
 import httpx
 import pytest
 
-from carton.providers.bgg_provider import BggProvider, BGG_API_URLS
-
+from carton.providers.bgg_provider import BGG_API_URLS, BggProvider
 
 HOT_URL = f"{BGG_API_URLS.xml2}/hot"
 

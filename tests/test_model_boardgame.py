@@ -1,5 +1,5 @@
 from carton.models.boardgame import BoardGame, Designer
-from carton.models.params import Players, PlayersInterval, PlayTime, MinAge
+from carton.models.params import MinAge, Players, PlayersInterval, PlayTime
 
 # from sqlmodel import select
 

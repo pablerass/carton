@@ -21,10 +21,10 @@ build:
 	uv build
 
 lint:
-	uv run flake8
+	uv run ruff check
 
 type-check:
-	uv run mypy .
+	uv run ty check
 
 test:
 	uv run pytest

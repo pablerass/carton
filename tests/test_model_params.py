@@ -1,5 +1,4 @@
 import pytest
-
 from pydantic import PositiveInt, ValidationError
 
 from carton.models.intervals import Interval, Intervals

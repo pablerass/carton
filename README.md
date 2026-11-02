@@ -45,8 +45,8 @@ carton --help
 ## Development
 
 ```sh
-make lint           # flake8
-make type-check     # mypy
+make lint           # ruff
+make type-check     # ty
 make test           # pytest
 make test-coverage  # pytest with coverage report
 make test-all       # all of the above
