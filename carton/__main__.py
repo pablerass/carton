@@ -9,6 +9,7 @@ from typing import TextIO
 from pydantic import BaseModel, TypeAdapter
 
 from .auth import bgg_login
+from .cache import default_cache_file, load_cache, save_cache
 from .models.boardgame import BGGGame
 from .providers import BggProvider, BggUserNotFoundError
 
@@ -41,6 +42,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
                                    help='Output format (default: csv)')
     collection_parser.add_argument('--output', '-o', type=str, default='-',
                                    help='File to write the collection to (default: standard output)')
+    collection_parser.add_argument('--cache-file', type=str, default=str(default_cache_file()),
+                                   help='File where BoardGameGeek games are cached '
+                                        '(or CARTON_CACHE_FILE environment variable, default: %(default)s)')
+    collection_parser.add_argument('--no-cache', action='store_true',
+                                   help='Request every game to BoardGameGeek without reading or updating the cache')
 
     parsed_args = parser.parse_args(args)
 
@@ -91,7 +97,8 @@ async def _user_collection(bgg: BggProvider, user: str) -> list[BGGGame]:
 def collection(args: argparse.Namespace) -> int:
     logger = logging.getLogger('carton.main.collection')
 
-    bgg = BggProvider()
+    cache = None if args.no_cache else load_cache(args.cache_file)
+    bgg = BggProvider(return_cache=cache)
     bgg_login(bgg, api_key=args.bgg_api_key, user=args.bgg_user, password=args.bgg_password)
 
     try:
@@ -99,6 +106,10 @@ def collection(args: argparse.Namespace) -> int:
     except BggUserNotFoundError:
         logger.error(f"BoardGameGeek user '{args.user}' not found")
         return 1
+    finally:
+        # Games obtained before a failure are kept too
+        if cache is not None:
+            save_cache(cache, args.cache_file)
 
     if args.output == '-':
         write_collection(games, sys.stdout, args.format)

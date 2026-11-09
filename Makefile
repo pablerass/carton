@@ -1,4 +1,4 @@
-.PHONY: test test-debug lint clean-pyc clean-build clean-test build
+.PHONY: test test-debug lint type-check clean-pyc clean-build clean-test build version bump-major bump-minor bump-patch
 
 clean: clean-pyc clean-build clean-test
 
@@ -16,6 +16,18 @@ clean-build:
 	rm --force --recursive build/
 	rm --force --recursive dist/
 	rm --force --recursive *.egg-info
+
+version:
+	uv version
+
+bump-major:
+	uv run bumpver update --major
+
+bump-minor:
+	uv run bumpver update --minor
+
+bump-patch:
+	uv run bumpver update --patch
 
 build:
 	uv build

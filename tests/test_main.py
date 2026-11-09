@@ -11,9 +11,10 @@ from carton.providers import BggUserNotFoundError
 
 
 @pytest.fixture(autouse=True)
-def clean_environment(monkeypatch):
+def clean_environment(monkeypatch, tmp_path):
     for var in ("BGG_USER", "BGG_PASSWORD", "BGG_API_KEY"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("CARTON_CACHE_FILE", str(tmp_path / "cache.pickle"))
 
 
 def _games() -> list[BGGGame]:
@@ -92,7 +93,7 @@ class FakeProvider:
 @pytest.fixture
 def fake_provider(monkeypatch):
     fake = FakeProvider()
-    monkeypatch.setattr(carton_main, "BggProvider", lambda: fake)
+    monkeypatch.setattr(carton_main, "BggProvider", lambda **kwargs: fake)
     return fake
 
 

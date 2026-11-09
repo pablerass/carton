@@ -1,12 +1,11 @@
 import asyncio
 import logging
 from collections import namedtuple
-from functools import partial
 from typing import Self
 
-import aiometer
 import httpx
 import xmltodict
+from cartucho import Cacheable, ReturnCache, cached_method
 from pydantic import ValidationError
 
 from ..models.boardgame import BGGDesigner, BGGGame
@@ -21,6 +20,10 @@ BGG_LOGIN_URL: str = "https://boardgamegeek.com/login/api/v1"
 # Retry policy for 202 Accepted responses, returned by BGG while a request is queued
 BGG_ACCEPTED_RETRIES: int = 5
 BGG_ACCEPTED_DELAY: float = 2.0  # Seconds, doubled on each retry
+
+# Limits for requests sent to BGG, cached results are not affected
+BGG_MAX_CONCURRENT_REQUESTS: int = 20
+BGG_MAX_REQUESTS_PER_SECOND: float = 10
 
 BGG_API_URLS: BggApiUrlMap = BggApiUrlMap(
     xml=f"{BGG_URL}/xmlapi",
@@ -104,9 +107,18 @@ def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
     return polls_summary
 
 
-class BggProvider:
+class BggProvider(Cacheable):
+    """BoardGameGeek client.
+
+    Games obtained by id are stored in `return_cache`, if any, and reused instead
+    of requesting them again. Each BGG url has its own entries.
+    """
+    cache_id_attributes = ('url',)
+
     def __init__(self, url: str = BGG_URL, api_key: str | None = None,
-                 api_urls: BggApiUrlMap = BGG_API_URLS) -> None:
+                 api_urls: BggApiUrlMap = BGG_API_URLS,
+                 return_cache: ReturnCache | None = None) -> None:
+        super().__init__(return_cache)
         self.__url: str = url
         self.__api: BggApiUrlMap = api_urls
 
@@ -114,6 +126,11 @@ class BggProvider:
         self.__auth_cookies: dict | None = None
         self.__auth_headers: dict | None = None
         self.__client: httpx.AsyncClient | None = None
+
+        # Request rate limit, see _throttle
+        self.__requests_semaphore = asyncio.Semaphore(BGG_MAX_CONCURRENT_REQUESTS)
+        self.__rate_lock = asyncio.Lock()
+        self.__next_request_time: float = 0.0
 
         # If an API key/token is provided at construction time, activate it
         if api_key:
@@ -221,7 +238,9 @@ class BggProvider:
         logger = logging.getLogger('carton.BggProvider._get')
 
         for attempt in range(retries + 1):
-            response = await self._client.get(url, params=params)
+            async with self.__requests_semaphore:
+                await self._throttle()
+                response = await self._client.get(url, params=params)
             response.raise_for_status()
 
             if response.status_code != 202:
@@ -234,12 +253,22 @@ class BggProvider:
 
         raise TimeoutError(f"BGG kept the request to {url} queued after {retries} retries")
 
+    async def _throttle(self) -> None:
+        """Wait until a new request can be started without exceeding BGG_MAX_REQUESTS_PER_SECOND."""
+        async with self.__rate_lock:
+            now = asyncio.get_running_loop().time()
+            wait = self.__next_request_time - now
+            self.__next_request_time = max(now, self.__next_request_time) + 1 / BGG_MAX_REQUESTS_PER_SECOND
+        if wait > 0:
+            await asyncio.sleep(wait)
+
     async def hot(self):
         response = await self._get(f"{self._api.xml2}/hot")
         # TODO: Return the right response
         print(response.text)
 
-    async def boardgame_by_id(self, id: int | str) -> BGGGame:
+    @cached_method
+    async def boardgame_by_id(self, id: int) -> BGGGame:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_id')
 
         response = await self._get(
@@ -380,7 +409,7 @@ class BggProvider:
         logger.info(f"Obtained {boardgame_id} for '{name}' boardgame")
         return await self.boardgame_by_id(boardgame_id)
 
-    async def _user_collection_ids(self, user: str) -> list[str]:
+    async def _user_collection_ids(self, user: str) -> list[int]:
         # BGG returns expansions with subtype 'boardgame' unless they are explicitly
         # excluded, so base games and expansions are requested separately
         # TUNE: Include retries for rate limits (429)
@@ -400,7 +429,8 @@ class BggProvider:
             if 'errors' in parsed_response:
                 raise BggUserNotFoundError(user)
             response_items = parsed_response['items']
-            boardgame_ids.update((i['@objectid'], None) for i in _as_list(response_items.get('item')))
+            # Ids are integers so they share cache entries with boardgame_by_id(<int>) calls
+            boardgame_ids.update((int(i['@objectid']), None) for i in _as_list(response_items.get('item')))
         return list(boardgame_ids)
 
     async def user_collection(self, user: str) -> list[BGGGame]:
@@ -408,7 +438,5 @@ class BggProvider:
 
         boardgame_ids = await self._user_collection_ids(user)
         logger.debug(f"Found {len(boardgame_ids)} games and expansions in {user} collection")
-        return await aiometer.run_all(
-            [partial(self.boardgame_by_id, id) for id in boardgame_ids],
-            max_at_once=20,
-            max_per_second=10)
+        # Requests to BGG are rate limited in _get, so cached games are returned immediately
+        return list(await asyncio.gather(*(self.boardgame_by_id(id) for id in boardgame_ids)))

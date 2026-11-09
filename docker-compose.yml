@@ -1,7 +1,15 @@
 services:
   carton:
-    build: .
+    build:
+      context: .
+      additional_contexts:
+        cartucho: ../cartucho
     image: carton
     env_file: .env
     ports:
       - "${CARTON_PORT:-8000}:8000"
+    volumes:
+      - cache:/data
+
+volumes:
+  cache:

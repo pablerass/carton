@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 
 from . import __version__
 from .auth import bgg_login
+from .cache import default_cache_file, load_cache, save_cache
 from .models.boardgame import BGGGame
 from .providers import BggProvider, BggUserNotFoundError
 
@@ -26,11 +27,16 @@ async def _authenticate(bgg: BggProvider) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    # A single provider is shared by all requests, so they reuse its connection pool
-    async with BggProvider() as bgg:
+    # A single provider is shared by all requests, so they reuse its connection pool and cache
+    cache_file = default_cache_file()
+    cache = load_cache(cache_file)
+    async with BggProvider(return_cache=cache) as bgg:
         await _authenticate(bgg)
         app.state.bgg = bgg
-        yield
+        try:
+            yield
+        finally:
+            save_cache(cache, cache_file)
 
 
 # Run with: uvicorn carton.api:app
@@ -42,6 +48,7 @@ def get_bgg(request: Request) -> BggProvider:
     return request.app.state.bgg
 
 
+# TUNE: Instead of list of BGGGame this should return a list of BoardGames
 @app.get("/users/{username}/collection", response_model=list[BGGGame])
 async def user_collection(username: str, bgg: Annotated[BggProvider, Depends(get_bgg)]) -> list[BGGGame]:
     """Return all games and expansions owned by a BoardGameGeek user."""

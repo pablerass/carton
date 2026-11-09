@@ -70,6 +70,21 @@ Endpoints:
 
 Interactive documentation is available at `http://127.0.0.1:8000/docs`.
 
+## Cache
+
+Games obtained from BoardGameGeek are cached with
+[cartucho](https://github.com/pablerass/cartucho) in a local file, so they are
+not requested again. Collections are always requested, so newly owned games
+are found. Delete the cache file to obtain updated game data.
+
+| Variable            | Default                      | Description                                 |
+|---------------------|------------------------------|---------------------------------------------|
+| `CARTON_CACHE_FILE` | `~/.cache/carton/bgg.pickle` | File where games are cached                 |
+
+The CLI also accepts `--cache-file` and `--no-cache`. The API
+loads the cache on startup and saves it on shutdown. The cache file is
+unpickled when loaded, so it must only be writable by trusted users.
+
 ## Docker
 
 The Docker image runs the API. Copy the example environment file and fill in
@@ -87,6 +102,9 @@ docker compose up --build
 
 The API is published on port 8000 of the host, set `CARTON_PORT` to use a
 different one.
+
+cartucho is installed from `../cartucho`, so it has to be checked out next to
+this repository. The cache is kept in the `cache` volume.
 
 ## Development
 

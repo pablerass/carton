@@ -8,6 +8,10 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# cartucho is a local path dependency (../cartucho), provided as the 'cartucho' build context
+COPY --from=cartucho pyproject.toml README.md LICENSE.txt /cartucho/
+COPY --from=cartucho cartucho /cartucho/cartucho
+
 # Install dependencies first so this layer is reused when only the code changes
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-default-groups --no-install-project --no-editable
@@ -21,7 +25,12 @@ FROM python:3.14-slim
 
 COPY --from=builder /app/.venv /app/.venv
 
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    CARTON_CACHE_FILE=/data/bgg.pickle
+
+# Cached BGG games, mount a volume here to keep them between containers
+RUN mkdir /data && chown 1000:1000 /data
+VOLUME /data
 
 USER 1000:1000
 EXPOSE 8000

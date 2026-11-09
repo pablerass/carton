@@ -120,18 +120,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aiometer"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/77/cf/9d81b707241b7fb6e8f6bd896cd43d1d93f9e126b5577d962de490bac644/aiometer-1.0.0.tar.gz", hash = "sha256:c492933dbd3a90c619473c3f242d00842ee274f6285a44b5d5fbee228a407056", size = 18427, upload-time = "2025-04-04T09:26:25.634Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/0b/b8cd78305e788a9837c41c75183a1085df3c4e5d5758681fb623c33d5848/aiometer-1.0.0-py3-none-any.whl", hash = "sha256:a733315788ff9b474a924de865f9ecee2c29b8f5f9ac26db7660976affa6bf2e", size = 12436, upload-time = "2025-04-04T09:26:24.184Z" },
-]
-
-[[package]]
 name = "aiosignal"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -213,7 +201,6 @@ version = "0.1.0a0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
-    { name = "aiometer" },
     { name = "cartucho" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -253,8 +240,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp" },
-    { name = "aiometer" },
-    { name = "cartucho" },
+    { name = "cartucho", editable = "../cartucho" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -293,10 +279,30 @@ test = [
 [[package]]
 name = "cartucho"
 version = "0.1.0a1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ec/f6/095e73ec1a5c070333b5f9e3a4a52d4abc7f4cf8e3526d09b4a611e81a94/cartucho-0.1.0a1.tar.gz", hash = "sha256:a8a7f8759396d6826f2971292aa7869d463562676e0ed2a2aab7dad00afd74be", size = 9066, upload-time = "2026-02-01T19:14:20.612Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/2e/2ea29cabcda9f2affa0be575fe33a3a99825b103826525e4f9d2b2a12c59/cartucho-0.1.0a1-py3-none-any.whl", hash = "sha256:6b2eb76c65827a290c15e22ba631c24f96ca4578e5badc06cdb5695265170536", size = 10952, upload-time = "2026-02-01T19:14:18.621Z" },
+source = { editable = "../cartucho" }
+
+[package.metadata]
+requires-dist = [{ name = "redis", marker = "extra == 'redis'", specifier = ">=4.0" }]
+provides-extras = ["redis"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "bumpver" },
+    { name = "ipdb" },
+    { name = "ipython" },
+]
+docs = [
+    { name = "furo" },
+    { name = "myst-parser" },
+    { name = "sphinx" },
+]
+test = [
+    { name = "coverage" },
+    { name = "fakeredis" },
+    { name = "pytest" },
+    { name = "redis", specifier = ">=4.0" },
+    { name = "ruff", specifier = ">=0.17.4" },
+    { name = "ty", specifier = ">=0.0.99" },
 ]
 
 [[package]]

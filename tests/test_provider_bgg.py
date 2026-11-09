@@ -1,5 +1,9 @@
-import pytest
+import time
 
+import pytest
+from cartucho import ReturnCache
+
+from carton.cache import load_cache, save_cache
 from carton.models.boardgame import BGGDesigner
 from carton.models.params import PlayersInterval
 from carton.models.poll import MultilevelPoll, Poll
@@ -311,6 +315,44 @@ async def test_boardgame_by_id_community_min_age(httpx_mock):
     assert boardgame.community_min_age == 10
 
 
+async def test_boardgame_by_id_uses_cache(httpx_mock, tmp_path):
+    # The game is requested once, later calls use the cache
+    httpx_mock.add_response(url=_boardgame_url(1), text=_boardgame_xml(1))
+    cache = ReturnCache()
+
+    async with BggProvider(return_cache=cache) as bgg:
+        first = await bgg.boardgame_by_id(1)
+        second = await bgg.boardgame_by_id(1)
+    assert first == second
+
+    # The saved cache is reused by other providers
+    save_cache(cache, tmp_path / 'cache.pickle')
+    async with BggProvider(return_cache=load_cache(tmp_path / 'cache.pickle')) as bgg:
+        assert await bgg.boardgame_by_id(1) == first
+
+    assert len(httpx_mock.get_requests()) == 1
+
+
+async def test_boardgame_by_id_cache_per_url(httpx_mock):
+    httpx_mock.add_response(url=_boardgame_url(1), text=_boardgame_xml(1), is_reusable=True)
+    cache = ReturnCache()
+
+    async with BggProvider(return_cache=cache) as bgg:
+        await bgg.boardgame_by_id(1)
+    async with BggProvider(url='https://other.example.com', return_cache=cache) as bgg:
+        await bgg.boardgame_by_id(1)
+
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_load_cache_missing_or_broken(tmp_path):
+    assert len(load_cache(tmp_path / 'missing.pickle')) == 0
+
+    broken = tmp_path / 'broken.pickle'
+    broken.write_bytes(b'not a pickle')
+    assert len(load_cache(broken)) == 0
+
+
 def test_parse_polls_without_results():
     poll_response = [
         {'@name': 'language_dependence', '@title': 'Language Dependence', '@totalvotes': '0',
@@ -411,9 +453,9 @@ def _collection_url(params: str) -> str:
 
 
 @pytest.mark.parametrize('base_ids, expansion_ids, expected', [
-    ((1, 2), (3,), ['1', '2', '3']),
-    ((1, 2, 1), (), ['1', '2']),
-    ((), (3,), ['3']),
+    ((1, 2), (3,), [1, 2, 3]),
+    ((1, 2, 1), (), [1, 2]),
+    ((), (3,), [3]),
     ((), (), []),
 ])
 async def test_user_collection_ids_includes_expansions(httpx_mock, base_ids, expansion_ids, expected):
@@ -434,3 +476,24 @@ async def test_user_collection_ids_unknown_user(httpx_mock):
     async with BggProvider() as bgg:
         with pytest.raises(BggUserNotFoundError):
             await bgg._user_collection_ids('alice')
+
+
+async def test_user_collection_cached_games_are_not_rate_limited(httpx_mock):
+    # Only requests to BGG are rate limited, so a cached collection is returned immediately
+    ids = range(1, 31)
+    httpx_mock.add_response(url=_collection_url('excludesubtype=boardgameexpansion'),
+                            text=_collection_xml(*ids), is_reusable=True)
+    httpx_mock.add_response(url=_collection_url('subtype=boardgameexpansion'),
+                            text=_collection_xml(), is_reusable=True)
+    for id in ids:
+        httpx_mock.add_response(url=_boardgame_url(id), text=_boardgame_xml(id))
+
+    async with BggProvider(return_cache=ReturnCache()) as bgg:
+        first = await bgg.user_collection('alice')
+
+        start = time.monotonic()
+        second = await bgg.user_collection('alice')
+        assert time.monotonic() - start < 0.5
+
+    assert second == first
+    assert len(httpx_mock.get_requests()) == 2 + len(ids) + 2
