@@ -21,11 +21,9 @@ FROM python:3.14-slim
 
 COPY --from=builder /app/.venv /app/.venv
 
-# carton writes its export to ~/file.csv, so HOME points to the output directory
-ENV PATH="/app/.venv/bin:$PATH" \
-    HOME=/data
+ENV PATH="/app/.venv/bin:$PATH"
 
-WORKDIR /data
 USER 1000:1000
+EXPOSE 8000
 
-ENTRYPOINT ["carton"]
+CMD ["uvicorn", "carton.api:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -23,17 +23,28 @@ dependencies, use `uv sync --no-default-groups`.
 
 ## Usage
 
+Carton can be used as a command line tool or as an API. Every API endpoint has
+an equivalent command, see
+[ADR 2](docs/adr/0002-cli-and-api-parity.md).
+
+Both authenticate against BoardGameGeek with an API key, or with a user and a
+password, provided via the `BGG_API_KEY`, or `BGG_USER` and `BGG_PASSWORD`,
+environment variables.
+
+### Command line
+
 The project exposes a `carton` command:
 
 ```sh
-uv run carton --bgg-user <user> --bgg-api-key <api-key>
+uv run carton collection <user> --bgg-api-key <api-key>
 # or
-uv run carton --bgg-user <user> --bgg-password <password>
+uv run carton collection <user> --bgg-user <login-user> --bgg-password <password>
 ```
 
-Credentials can also be provided via the `BGG_USER`, `BGG_PASSWORD` and
-`BGG_API_KEY` environment variables. Run `uv run carton --help` for all
-options.
+If `<user>` is omitted, the collection of `--bgg-user` is exported. The
+collection is written as CSV to standard output. Use `--format json` to get
+JSON and `--output <file>` to write it to a file. Run `uv run carton --help` or
+`uv run carton <command> --help` for all options.
 
 To install the command globally as a tool:
 
@@ -42,25 +53,40 @@ uv tool install .
 carton --help
 ```
 
+### API
+
+The API is the ASGI application `carton.api:app`, run it with
+[uvicorn](https://www.uvicorn.org/):
+
+```sh
+BGG_API_KEY=<api-key> uv run uvicorn carton.api:app --reload
+```
+
+Endpoints:
+
+| Endpoint                         | Command                       | Description                                       |
+|----------------------------------|-------------------------------|---------------------------------------------------|
+| `GET /users/{username}/collection` | `carton collection <username>` | All games and expansions owned by a BGG user, 404 if the user does not exist |
+
+Interactive documentation is available at `http://127.0.0.1:8000/docs`.
+
 ## Docker
 
-Copy the example environment file and fill in your BoardGameGeek credentials:
+The Docker image runs the API. Copy the example environment file and fill in
+your BoardGameGeek credentials:
 
 ```sh
 cp .env.example .env
 ```
 
-Then build the image and run the command:
+Then build and start the server:
 
 ```sh
-docker compose build
-docker compose run --rm carton
+docker compose up --build
 ```
 
-Arguments are passed to `carton`, for example
-`docker compose run --rm carton --help`. The collection is printed and exported
-to `output/file.csv`. The container runs as UID/GID 1000; if your host user is
-different, set `CARTON_UID` and `CARTON_GID` so it can write to `output/`.
+The API is published on port 8000 of the host, set `CARTON_PORT` to use a
+different one.
 
 ## Development
 

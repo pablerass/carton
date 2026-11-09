@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, SerializeAsAny
 
 from .params import MinAge, Players, PlayTime, Rank, Rating, Year
 
@@ -9,7 +9,7 @@ class BoardGame(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    designers: set[Designer] = set()
+    designers: set[SerializeAsAny[Designer]] = set()
     min_age: MinAge | None = None
     players: Players | None = None
     play_time: PlayTime | None = None
@@ -44,7 +44,8 @@ class Designer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    boardgames: set[BoardGame] = set()
+    # Excluded from serialization, as games already contain their designers and it would recurse forever
+    boardgames: set[BoardGame] = Field(default=set(), exclude=True)
 
     def __str__(self) -> str:
         return self.name

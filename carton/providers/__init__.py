@@ -1,3 +1,3 @@
-from .bgg_provider import BggProvider
+from .bgg_provider import BggProvider, BggUserNotFoundError
 
-__all__ = ['BggProvider']
+__all__ = ['BggProvider', 'BggUserNotFoundError']

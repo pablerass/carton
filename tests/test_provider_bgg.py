@@ -3,7 +3,13 @@ import pytest
 from carton.models.boardgame import BGGDesigner
 from carton.models.params import PlayersInterval
 from carton.models.poll import MultilevelPoll, Poll
-from carton.providers.bgg_provider import BGG_API_URLS, BggProvider, _parse_polls, _parse_polls_summary
+from carton.providers.bgg_provider import (
+    BGG_API_URLS,
+    BggProvider,
+    BggUserNotFoundError,
+    _parse_polls,
+    _parse_polls_summary,
+)
 
 
 def test_parse_polls():
@@ -418,3 +424,13 @@ async def test_user_collection_ids_includes_expansions(httpx_mock, base_ids, exp
 
     async with BggProvider() as bgg:
         assert await bgg._user_collection_ids('alice') == expected
+
+
+async def test_user_collection_ids_unknown_user(httpx_mock):
+    errors_xml = '<errors><error><message>Invalid username specified</message></error></errors>'
+    httpx_mock.add_response(url=_collection_url('excludesubtype=boardgameexpansion'), text=errors_xml)
+    httpx_mock.add_response(url=_collection_url('subtype=boardgameexpansion'), text=errors_xml)
+
+    async with BggProvider() as bgg:
+        with pytest.raises(BggUserNotFoundError):
+            await bgg._user_collection_ids('alice')

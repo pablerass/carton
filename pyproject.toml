@@ -21,7 +21,6 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = [
   "cartucho",
-  "pandas",
   "fastapi",
   "aiohttp",
   "aiometer",
@@ -29,6 +28,7 @@ dependencies = [
   "sqlmodel",
   "pydantic",
   "xmltodict",
+  "uvicorn",
 ]
 
 [project.urls]
@@ -46,7 +46,6 @@ test = [
   "coverage",
   "types-setuptools",
   "types-xmltodict",
-  "pandas-stubs",
   "ty",
   "ruff",
 ]
@@ -55,7 +54,6 @@ dev = [
   "bumpver",
   "ipython",
   "ipdb",
-  "uvicorn",
 ]
 
 [tool.uv]

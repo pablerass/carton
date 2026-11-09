@@ -29,6 +29,10 @@ BGG_API_URLS: BggApiUrlMap = BggApiUrlMap(
 )
 
 
+class BggUserNotFoundError(LookupError):
+    """Raised when BGG does not know the requested user."""
+
+
 def _as_list(value) -> list:
     """Normalize an xmltodict node that may be missing, a single element or a list of elements."""
     if value is None:
@@ -391,11 +395,15 @@ class BggProvider:
         # Keep collection order and remove duplicates, such as games owned in several versions
         boardgame_ids = {}
         for response in (base_response, expansions_response):
-            response_items = xmltodict.parse(response.text)['items']
+            parsed_response = xmltodict.parse(response.text)
+            # BGG answers unknown users with 200 and an <errors> document instead of <items>
+            if 'errors' in parsed_response:
+                raise BggUserNotFoundError(user)
+            response_items = parsed_response['items']
             boardgame_ids.update((i['@objectid'], None) for i in _as_list(response_items.get('item')))
         return list(boardgame_ids)
 
-    async def user_collection(self, user: str):
+    async def user_collection(self, user: str) -> list[BGGGame]:
         logger = logging.getLogger('carton.BggProvider.user_collection')
 
         boardgame_ids = await self._user_collection_ids(user)
