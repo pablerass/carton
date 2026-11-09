@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Annotated
 
-from pydantic import PositiveInt
+from pydantic import Field, PositiveInt
 
 from .intervals import Interval, Intervals
 
@@ -10,6 +11,8 @@ PlayersInterval = Interval[PositiveInt]
 PlayTime = Interval[PositiveInt]
 MinAge = PositiveInt
 Year = PositiveInt  # TODO: Limit possible year values
+Rating = Annotated[float, Field(ge=1, le=10)]
+Rank = PositiveInt
 
 
 class Players(Intervals[PositiveInt]):

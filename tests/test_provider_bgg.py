@@ -195,6 +195,7 @@ BOARDGAME_XML_TEMPLATE = """<boardgames termsofuse="https://boardgamegeek.com/xm
     <name sortindex="1">Juego de prueba</name>
     <name primary="true" sortindex="1">Test Game</name>
     <boardgamecategory objectid="1042">Expansion for Base-game</boardgamecategory>
+    {expansions}
     {designers}
     <poll name="suggested_numplayers" title="User Suggested Number of Players" totalvotes="1">
       {numplayers_results}
@@ -210,6 +211,12 @@ BOARDGAME_XML_TEMPLATE = """<boardgames termsofuse="https://boardgamegeek.com/xm
     </poll>
     <statistics>
       <ratings>
+        <usersrated>{users_rated}</usersrated>
+        <average>{average}</average>
+        <bayesaverage>{bayes_average}</bayesaverage>
+        <ranks>
+          {ranks}
+        </ranks>
         <averageweight>0</averageweight>
       </ratings>
     </statistics>
@@ -237,12 +244,21 @@ def _numplayers_results(votes: dict[str, tuple[int, int, int]]) -> str:
         for numplayers, (best, recommended, not_recommended) in votes.items())
 
 
+RANKS = """<rank type="subtype" id="1" name="boardgame" friendlyname="Board Game Rank" value="624"
+                bayesaverage="6.90096" />
+          <rank type="family" id="5497" name="strategygames" friendlyname="Strategy Game Rank" value="599"
+                bayesaverage="6.76951" />"""
+
+
 def _boardgame_xml(id: int, designers: str = '', playerage_results: str = PLAYERAGE_RESULTS,
-                   numplayers_votes: dict[str, tuple[int, int, int]] = NUMPLAYERS_VOTES) -> str:
+                   numplayers_votes: dict[str, tuple[int, int, int]] = NUMPLAYERS_VOTES,
+                   users_rated: int = 145300, average: float = 7.08977, bayes_average: float = 6.90096,
+                   ranks: str = RANKS, expansions: str = '') -> str:
     return BOARDGAME_XML_TEMPLATE.format(
-        id=id, designers=designers, playerage_results=playerage_results,
+        id=id, designers=designers, expansions=expansions, playerage_results=playerage_results,
         age_votes=4 if playerage_results else 0,
-        numplayers_results=_numplayers_results(numplayers_votes))
+        numplayers_results=_numplayers_results(numplayers_votes),
+        users_rated=users_rated, average=average, bayes_average=bayes_average, ranks=ranks)
 
 
 def _boardgame_url(id: int) -> str:
@@ -333,3 +349,72 @@ async def test_boardgame_by_id_community_players(httpx_mock, numplayers_votes,
     assert (str(boardgame.community_players) if boardgame.community_players else None) == expected_players
     assert (str(boardgame.community_best_players) if boardgame.community_best_players else None) == \
         expected_best_players
+
+
+NOT_RANKED = ('<rank type="subtype" id="1" name="boardgame" friendlyname="Board Game Rank" value="Not Ranked" '
+              'bayesaverage="Not Ranked" />')
+
+
+@pytest.mark.parametrize('xml_args, expected', [
+    ({}, {'rating': 7.08977, 'geek_rating': 6.90096, 'num_ratings': 145300, 'rank': 624}),
+    # Games not ranked yet, such as many expansions
+    ({'ranks': NOT_RANKED},
+     {'rating': 7.08977, 'geek_rating': 6.90096, 'num_ratings': 145300, 'rank': None}),
+    # Games with too few ratings have no geek rating, BGG returns 0 for it
+    ({'users_rated': 12, 'bayes_average': 0, 'ranks': NOT_RANKED},
+     {'rating': 7.08977, 'geek_rating': None, 'num_ratings': 12, 'rank': None}),
+    # Without ratings BGG returns 0 as average and geek rating
+    ({'users_rated': 0, 'average': 0, 'bayes_average': 0, 'ranks': NOT_RANKED},
+     {'rating': None, 'geek_rating': None, 'num_ratings': 0, 'rank': None}),
+])
+async def test_boardgame_by_id_ratings_and_rank(httpx_mock, xml_args, expected):
+    httpx_mock.add_response(url=_boardgame_url(1), text=_boardgame_xml(1, **xml_args))
+
+    async with BggProvider() as bgg:
+        boardgame = await bgg.boardgame_by_id(1)
+
+    assert boardgame.model_dump(include=set(expected)) == expected
+
+
+@pytest.mark.parametrize('expansions, expected', [
+    ('', False),
+    # Base games link their expansions without the inbound attribute
+    ('<boardgameexpansion objectid="2">Test Game: Expansion</boardgameexpansion>', False),
+    # Expansions link their base games as inbound
+    ('<boardgameexpansion objectid="3" inbound="true">Test Game</boardgameexpansion>', True),
+    (('<boardgameexpansion objectid="3" inbound="true">Test Game</boardgameexpansion>'
+      '<boardgameexpansion objectid="4" inbound="true">Test Game: Big Box</boardgameexpansion>'), True),
+])
+async def test_boardgame_by_id_is_expansion(httpx_mock, expansions, expected):
+    httpx_mock.add_response(url=_boardgame_url(1), text=_boardgame_xml(1, expansions=expansions))
+
+    async with BggProvider() as bgg:
+        boardgame = await bgg.boardgame_by_id(1)
+
+    assert boardgame.is_expansion is expected
+
+
+def _collection_xml(*ids: int) -> str:
+    items = ''.join(f'<item objecttype="thing" objectid="{id}" subtype="boardgame" collid="{id}" />'
+                    for id in ids)
+    return f'<items totalitems="{len(ids)}" termsofuse="https://boardgamegeek.com/xmlapi/termsofuse">{items}</items>'
+
+
+def _collection_url(params: str) -> str:
+    return f"{BGG_API_URLS.xml2}/collection?username=alice&own=1&brief=1&{params}"
+
+
+@pytest.mark.parametrize('base_ids, expansion_ids, expected', [
+    ((1, 2), (3,), ['1', '2', '3']),
+    ((1, 2, 1), (), ['1', '2']),
+    ((), (3,), ['3']),
+    ((), (), []),
+])
+async def test_user_collection_ids_includes_expansions(httpx_mock, base_ids, expansion_ids, expected):
+    httpx_mock.add_response(url=_collection_url('excludesubtype=boardgameexpansion'),
+                            text=_collection_xml(*base_ids))
+    httpx_mock.add_response(url=_collection_url('subtype=boardgameexpansion'),
+                            text=_collection_xml(*expansion_ids))
+
+    async with BggProvider() as bgg:
+        assert await bgg._user_collection_ids('alice') == expected

@@ -255,6 +255,11 @@ class BggProvider:
             designers = [BGGDesigner(name=designer['#text'], bgg_id=designer['@objectid'])
                          for designer in _as_list(boardgame_response.get('boardgamedesigner'))]
 
+            # Expansions link their base games with inbound <boardgameexpansion> elements,
+            # while base games link their expansions without the inbound attribute
+            is_expansion = any(e.get('@inbound') == 'true'
+                               for e in _as_list(boardgame_response.get('boardgameexpansion')))
+
             polls = _parse_polls(boardgame_response.get('poll'))
             # TODO: Readd this
             # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
@@ -300,7 +305,20 @@ class BggProvider:
 
             # from pprint import pprint
             # pprint(boardgame_response)
-            community_average_weight = boardgame_response['statistics']['ratings']['averageweight']
+            ratings = boardgame_response['statistics']['ratings']
+            community_average_weight = ratings['averageweight']
+
+            num_ratings = int(ratings['usersrated'])
+
+            # BGG returns 0 as average when the game has no ratings, and as geek
+            # rating (bayesian average) when it has too few ratings to get one
+            rating = float(ratings['average']) or None
+            geek_rating = float(ratings['bayesaverage']) or None
+
+            # Board Game Rank is 'Not Ranked' for games without enough ratings
+            rank = next((int(r['@value']) for r in _as_list((ratings.get('ranks') or {}).get('rank'))
+                         if r['@type'] == 'subtype' and r['@name'] == 'boardgame' and r['@value'].isdigit()),
+                        None)
 
             boardgame = BGGGame(
                 name=name,
@@ -309,11 +327,16 @@ class BggProvider:
                 players=players,
                 play_time=play_time,
                 published=published,
+                is_expansion=is_expansion,
                 bgg_id=id,
                 community_min_age=community_min_age,
                 community_players=community_players,
                 community_best_players=community_best_players,
-                community_average_weight=community_average_weight
+                community_average_weight=community_average_weight,
+                rating=rating,
+                geek_rating=geek_rating,
+                num_ratings=num_ratings,
+                rank=rank
             )
         except Exception:
             logger.error(f"Error obtaining {id} boardgame from response")
@@ -353,17 +376,24 @@ class BggProvider:
         logger.info(f"Obtained {boardgame_id} for '{name}' boardgame")
         return await self.boardgame_by_id(boardgame_id)
 
-    async def _user_collection_ids(self, user: str) -> list[int]:
+    async def _user_collection_ids(self, user: str) -> list[str]:
+        # BGG returns expansions with subtype 'boardgame' unless they are explicitly
+        # excluded, so base games and expansions are requested separately
         # TUNE: Include retries for rate limits (429)
-        response = await self._get(
-            f"{self._api.xml2}/collection",
-            params={'username': user, 'own': 1, 'brief': 1})
+        base_response, expansions_response = await asyncio.gather(
+            self._get(f"{self._api.xml2}/collection",
+                      params={'username': user, 'own': 1, 'brief': 1,
+                              'excludesubtype': 'boardgameexpansion'}),
+            self._get(f"{self._api.xml2}/collection",
+                      params={'username': user, 'own': 1, 'brief': 1,
+                              'subtype': 'boardgameexpansion'}))
 
-        response_items = xmltodict.parse(response.text)['items']
-
-        boardgame_ids = [i['@objectid'] for i in response_items['item']
-                         if i['@subtype'] in ('boardgame', 'boardgameexpansion')]
-        return boardgame_ids
+        # Keep collection order and remove duplicates, such as games owned in several versions
+        boardgame_ids = {}
+        for response in (base_response, expansions_response):
+            response_items = xmltodict.parse(response.text)['items']
+            boardgame_ids.update((i['@objectid'], None) for i in _as_list(response_items.get('item')))
+        return list(boardgame_ids)
 
     async def user_collection(self, user: str):
         logger = logging.getLogger('carton.BggProvider.user_collection')

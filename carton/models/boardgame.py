@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, PositiveInt
+from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt
 
-from .params import MinAge, Players, PlayTime, Year
+from .params import MinAge, Players, PlayTime, Rank, Rating, Year
 
 
 class BoardGame(BaseModel):
@@ -14,7 +14,8 @@ class BoardGame(BaseModel):
     players: Players | None = None
     play_time: PlayTime | None = None
     published: Year | None = None
-    # TODO: Add expansions relation
+    is_expansion: bool = False
+    # TODO: Add expansions relation, see docs/adr/0001-expansions-in-recommendations.md
 
     def model_post_init(self, context, /):
         for d in self.designers:
@@ -30,8 +31,10 @@ class BGGGame(BoardGame):
     community_players: Players | None = None
     community_best_players: Players | None = None
     community_average_weight: float | None = None
-    # TODO: Add rank
-    # TODO: Add rating
+    rating: Rating | None = None  # Average users rating
+    geek_rating: Rating | None = None  # Bayesian average rating used for ranking
+    num_ratings: NonNegativeInt | None = None
+    rank: Rank | None = None  # Overall Board Game Rank
 
     def __hash__(self):
         return hash(self.bgg_id)
