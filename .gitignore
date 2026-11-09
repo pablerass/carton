@@ -140,3 +140,7 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Docker compose export directory
+output/*
+!output/.gitkeep

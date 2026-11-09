@@ -1,0 +1,9 @@
+services:
+  carton:
+    build: .
+    image: carton
+    env_file: .env
+    # Run as the host user so the exported file is owned by them
+    user: "${CARTON_UID:-1000}:${CARTON_GID:-1000}"
+    volumes:
+      - ./output:/data

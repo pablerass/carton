@@ -26,6 +26,17 @@ def test_players():
     assert str(Players.from_list([[1, 2], [4]])) == '1-2, 4'
 
 
+def test_players_from_values():
+    assert isinstance(Players.from_values([1, 2, 3]), Players)
+    assert str(Players.from_values([1, 2, 3])) == '1-3'
+    assert str(Players.from_values([5, 2, 1, 3])) == '1-3, 5'
+    assert str(Players.from_values([2, 4, 6])) == '2, 4, 6'
+    assert Players.from_values([]) == Players(intervals=[])
+
+    with pytest.raises(ValidationError):
+        Players.from_values([0, 1])
+
+
 def test_play_time():
     assert str(PlayTime(lower=30, upper=240)) == '30-240'
 

@@ -1,4 +1,4 @@
-.PHONY: test lint clean-pyc clean-build clean-test build
+.PHONY: test test-debug lint clean-pyc clean-build clean-test build
 
 clean: clean-pyc clean-build clean-test
 
@@ -28,6 +28,9 @@ type-check:
 
 test:
 	uv run pytest
+
+test-debug:
+	uv run pytest --pdb -x $(ARGS)
 
 test-coverage:
 	uv run coverage run --source carton -m pytest

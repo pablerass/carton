@@ -29,21 +29,59 @@ BGG_API_URLS: BggApiUrlMap = BggApiUrlMap(
 )
 
 
+def _as_list(value) -> list:
+    """Normalize an xmltodict node that may be missing, a single element or a list of elements."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return [value]
+    return value
+
+
 def _parse_polls(polls_response: list[dict]) -> dict[str, Poll]:
-    if isinstance(polls_response, dict):
-        polls_response = [polls_response]
-
+    # Polls without votes may come without any <results> element, those are skipped
     polls = {poll['@name']: poll['results']
-             for poll in polls_response}
+             for poll in _as_list(polls_response) if poll.get('results')}
 
-    polls['language_dependence'] = Poll.from_list(polls['language_dependence']['result'], '@level', '@numvotes')
-    polls['suggested_numplayers'] = MultilevelPoll.from_list(
-        polls['suggested_numplayers'],
-        choice_1_key='@numplayers', votes_1_key='result',
-        choice_2_key='@value', votes_2_key='@numvotes')
-    polls['suggested_playerage'] = Poll.from_list(polls['suggested_playerage']['result'], '@value', '@numvotes')
+    if 'language_dependence' in polls:
+        polls['language_dependence'] = Poll.from_list(
+            _as_list(polls['language_dependence']['result']), '@level', '@numvotes')
+    if 'suggested_numplayers' in polls:
+        polls['suggested_numplayers'] = MultilevelPoll.from_list(
+            [{**results, 'result': _as_list(results['result'])}
+             for results in _as_list(polls['suggested_numplayers'])],
+            choice_1_key='@numplayers', votes_1_key='result',
+            choice_2_key='@value', votes_2_key='@numvotes')
+    if 'suggested_playerage' in polls:
+        polls['suggested_playerage'] = Poll.from_list(
+            _as_list(polls['suggested_playerage']['result']), '@value', '@numvotes')
 
     return polls
+
+
+def _community_players(numplayers_poll: MultilevelPoll) -> tuple[Players | None, Players | None]:
+    """Obtain recommended and best numbers of players from the suggested number of players poll.
+
+    Uses the same rules as the BGG poll summary: a number of players is recommended when
+    Best + Recommended votes outnumber Not Recommended ones, and best when Best votes outnumber
+    the rest. If no number of players has a majority of Best votes, the most voted ones are taken.
+    Open ended choices such as '7+' are ignored, as they cannot be represented as intervals.
+    """
+    votes = {int(numplayers): choice_votes for numplayers, choice_votes in numplayers_poll.votes.items()
+             if str(numplayers).isdigit()}
+
+    recommended = [numplayers for numplayers, v in votes.items()
+                   if v['Best'] + v['Recommended'] > v['Not Recommended']]
+
+    best = [numplayers for numplayers, v in votes.items()
+            if v['Best'] > v['Recommended'] + v['Not Recommended']]
+    if not best:
+        max_best = max((v['Best'] for v in votes.values()), default=0)
+        if max_best > 0:
+            best = [numplayers for numplayers, v in votes.items() if v['Best'] == max_best]
+
+    return (Players.from_values(recommended) if recommended else None,
+            Players.from_values(best) if best else None)
 
 
 def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
@@ -213,13 +251,11 @@ class BggProvider:
                 name_info = [name_info]
             name = next(name['#text'] for name in name_info if name.get('@primary', False))
 
-            designer_info = boardgame_response['boardgamedesigner']
-            if not isinstance(designer_info, list):
-                designer_info = [designer_info]
+            # Some games (e.g. many expansions) have no designer credited
             designers = [BGGDesigner(name=designer['#text'], bgg_id=designer['@objectid'])
-                         for designer in designer_info]
+                         for designer in _as_list(boardgame_response.get('boardgamedesigner'))]
 
-            polls = _parse_polls(boardgame_response['poll'])
+            polls = _parse_polls(boardgame_response.get('poll'))
             # TODO: Readd this
             # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
 
@@ -231,8 +267,8 @@ class BggProvider:
 
             players = None
             try:
-                players = Players(lower=boardgame_response['minplayers'],
-                                  upper=boardgame_response['maxplayers'])
+                players = Players(intervals=[PlayersInterval(lower=boardgame_response['minplayers'],
+                                                             upper=boardgame_response['maxplayers'])])
             except ValidationError:
                 logger.warning(f'Unable to obtain players for {name}')
 
@@ -250,29 +286,17 @@ class BggProvider:
                 logger.warning(f'Unable to obtain year for {name}')
 
             community_min_age = None
-            try:
-                poll_values = polls['suggested_playerage'].winner()
-                community_min_age = MinAge(poll_values)
-            except ValidationError:
-                logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
+            if 'suggested_playerage' in polls:
+                try:
+                    poll_values = polls['suggested_playerage'].winner()
+                    community_min_age = MinAge(poll_values)
+                except ValidationError:
+                    logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
 
-            # TODO: Load community info as set of values instead of interval
             community_players = None
             community_best_players = None
-            if 'suggested_playernum' in polls:
-                try:
-                    poll_players = polls['suggested_playernum']
-                    poll_values = (poll_players.choice_2_poll('Best') +
-                                   poll_players.choice_2_poll('Recommended')).winners()
-                    community_players = Players.from_list(poll_values)
-                except ValidationError:
-                    logger.warning(f'Unable to obtain community_players with {poll_values} for {name}')
-
-                try:
-                    poll_values = poll_players.winners('Best')
-                    community_best_players = Players.from_list(poll_values)
-                except ValidationError:
-                    logger.warning(f'Unable to obtain community_best_players with {poll_values} for {name}')
+            if 'suggested_numplayers' in polls:
+                community_players, community_best_players = _community_players(polls['suggested_numplayers'])
 
             # from pprint import pprint
             # pprint(boardgame_response)
