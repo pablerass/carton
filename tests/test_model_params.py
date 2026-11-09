@@ -1,5 +1,5 @@
 import pytest
-from pydantic import PositiveInt, ValidationError
+from pydantic import PositiveInt, TypeAdapter, ValidationError
 
 from carton.models.intervals import Interval, Intervals
 from carton.models.params import MinAge, Players, PlayersInterval, PlayTime
@@ -41,5 +41,8 @@ def test_play_time():
     assert str(PlayTime(lower=30, upper=240)) == '30-240'
 
 
-def test_min_int():
-    assert str(MinAge(1)) == '1'
+def test_min_age():
+    assert TypeAdapter(MinAge).validate_python('1') == 1
+
+    with pytest.raises(ValidationError):
+        TypeAdapter(MinAge).validate_python(0)

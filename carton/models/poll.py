@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
+from .intervals import Orderable
 
-class Poll[T](BaseModel):
-    model_config = ConfigDict(extra="forbid")
 
-    choices: Sequence[T] = None
+class Poll[T: Orderable](BaseModel):
+    # Choices are only validated as Orderable, like Interval values
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    # Empty choices are taken from the votes, they are sorted once the poll is created
+    choices: Sequence[T] = ()
     votes: dict[T, int] = defaultdict(int)
     # TODO: Add total_votes calculated argument
 
@@ -30,8 +35,8 @@ class Poll[T](BaseModel):
         if not isinstance(self.votes, defaultdict):
             self.votes = defaultdict(int, self.votes)
 
-        if self.choices is None:
-            self.choices = set(self.votes.keys())
+        if not self.choices:
+            self.choices = tuple(self.votes.keys())
 
         if set(self.choices) != set(self.votes.keys()):
             for c in self.choices:
@@ -50,7 +55,7 @@ class Poll[T](BaseModel):
             raise ValidationError('vote choices do not match with poll choices')
         self.votes |= votes
 
-    def winner(self, strategy: Callable[..., T] = min) -> T:
+    def winner(self, strategy: Callable[[Iterable[T]], T] = min) -> T:
         return strategy(self.winners())
 
     def winners(self) -> list[T]:
@@ -58,7 +63,7 @@ class Poll[T](BaseModel):
         max_value = max(self.votes.values())
         return [k for k, v in self.votes.items() if v == max_value]
 
-    def looser(self, strategy: Callable[..., T] = min) -> T:
+    def looser(self, strategy: Callable[[Iterable[T]], T] = min) -> T:
         return strategy(self.loosers())
 
     def loosers(self) -> list[T]:
@@ -83,7 +88,7 @@ class Poll[T](BaseModel):
         return cls(votes=votes)
 
     @classmethod
-    def from_list(cls, votes: list[dict[str, T | int]],
+    def from_list(cls, votes: list[dict[str, Any]],
                   choice_key: str = 'choice', votes_key: str = 'votes') -> Poll:
         votes_dict = {
             v[choice_key]: int(v[votes_key]) for v in votes
@@ -91,11 +96,13 @@ class Poll[T](BaseModel):
         return cls(votes=votes_dict)
 
 
-class MultilevelPoll[T, U](BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class MultilevelPoll[T: Orderable, U: Orderable](BaseModel):
+    # Choices are only validated as Orderable, like Interval values
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-    choices_1: Sequence[T] = None
-    choices_2: Sequence[U] = None
+    # Empty choices are taken from the votes, they are sorted once the poll is created
+    choices_1: Sequence[T] = ()
+    choices_2: Sequence[U] = ()
     votes: dict[T, dict[U, int]] = defaultdict(lambda: defaultdict(int))
     # TODO: Add total_votes calculated argument
 
@@ -124,15 +131,13 @@ class MultilevelPoll[T, U](BaseModel):
 
     def model_post_init(self, context, /):
         if not isinstance(self.votes, defaultdict):
-            self.votes = defaultdict(lambda x: defaultdict(int), self.votes)
+            self.votes = defaultdict(lambda: defaultdict(int), self.votes)
 
-        if self.choices_1 is None:
-            self.choices_1 = set(self.votes.keys())
+        if not self.choices_1:
+            self.choices_1 = tuple(self.votes.keys())
 
-        if self.choices_2 is None:
-            self.choices_2 = set()
-            for v in self.votes.values():
-                self.choices_2 |= set(v.keys())
+        if not self.choices_2:
+            self.choices_2 = tuple({c2: None for v in self.votes.values() for c2 in v})
 
         if set(self.choices_1) != set(self.votes.keys()):
             for c1 in self.choices_1:
@@ -165,7 +170,7 @@ class MultilevelPoll[T, U](BaseModel):
     def choice_2_poll(self, choice_2: U) -> Poll[T]:
         return Poll(votes=self._choice_2_votes(choice_2))
 
-    def winner(self, choice_2: U, strategy: Callable[[T], T] = min) -> T:
+    def winner(self, choice_2: U, strategy: Callable[[Iterable[T]], T] = min) -> T:
         return strategy(self.winners(choice_2))
 
     def winners(self, choice_2: U) -> list[T]:
@@ -177,7 +182,7 @@ class MultilevelPoll[T, U](BaseModel):
         max_value = max(choice_2_votes.values())
         return [k for k, v in choice_2_votes.items() if v == max_value]
 
-    def looser(self, choice_2: U, strategy: Callable[T] = min) -> T:
+    def looser(self, choice_2: U, strategy: Callable[[Iterable[T]], T] = min) -> T:
         return strategy(self.loosers(choice_2))
 
     def loosers(self, choice_2: U) -> list[T]:
@@ -197,7 +202,7 @@ class MultilevelPoll[T, U](BaseModel):
         return cls(votes=votes)
 
     @classmethod
-    def from_list(cls, votes: list[dict[str, T | list[dict[str, U | int]]]],
+    def from_list(cls, votes: list[dict[str, Any]],
                   choice_1_key: str = 'choice_1', votes_1_key: str = 'votes_1',
                   choice_2_key: str = 'choice_2', votes_2_key: str = 'votes_2') -> MultilevelPoll:
         votes_dict = {

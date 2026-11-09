@@ -12,6 +12,7 @@ PlayTime = Interval[PositiveInt]
 MinAge = PositiveInt
 Year = PositiveInt  # TODO: Limit possible year values
 Rating = Annotated[float, Field(ge=1, le=10)]
+Weight = Annotated[float, Field(ge=1, le=5)]  # BGG complexity, from 1 (light) to 5 (heavy)
 Rank = PositiveInt
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, SerializeAsAny
 
-from .params import MinAge, Players, PlayTime, Rank, Rating, Year
+from .params import MinAge, Players, PlayTime, Rank, Rating, Weight, Year
 
 
 class BoardGame(BaseModel):
@@ -30,7 +30,7 @@ class BGGGame(BoardGame):
     community_min_age: MinAge | None = None
     community_players: Players | None = None
     community_best_players: Players | None = None
-    community_average_weight: float | None = None
+    community_average_weight: Weight | None = None
     rating: Rating | None = None  # Average users rating
     geek_rating: Rating | None = None  # Bayesian average rating used for ranking
     num_ratings: NonNegativeInt | None = None

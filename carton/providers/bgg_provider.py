@@ -1,7 +1,8 @@
 import asyncio
 import logging
 from collections import namedtuple
-from typing import Self
+from collections.abc import Iterable
+from typing import Any, Self
 
 import httpx2
 import xmltodict
@@ -9,10 +10,10 @@ from cartucho import Cacheable, ReturnCache, cached_method
 from pydantic import ValidationError
 
 from ..models.boardgame import BGGDesigner, BGGGame
-from ..models.params import MinAge, Players, PlayersInterval, PlayTime, Year
+from ..models.params import Players, PlayersInterval, PlayTime
 from ..models.poll import MultilevelPoll, Poll
 
-BggApiUrlMap = namedtuple('_BggApiUrl', ['xml', 'xml2', 'json'])
+BggApiUrlMap = namedtuple('BggApiUrlMap', ['xml', 'xml2', 'json'])
 
 BGG_URL: str = "https://boardgamegeek.com"
 BGG_LOGIN_URL: str = "https://boardgamegeek.com/login/api/v1"
@@ -36,6 +37,14 @@ class BggUserNotFoundError(LookupError):
     """Raised when BGG does not know the requested user."""
 
 
+class BggGameNotFoundError(LookupError):
+    """Raised when BGG does not know the requested game ids, available in `ids`."""
+
+    def __init__(self, ids: list[int]) -> None:
+        super().__init__(f"BoardGameGeek games not found: {', '.join(str(id) for id in ids)}")
+        self.ids = ids
+
+
 def _as_list(value) -> list:
     """Normalize an xmltodict node that may be missing, a single element or a list of elements."""
     if value is None:
@@ -45,23 +54,25 @@ def _as_list(value) -> list:
     return value
 
 
-def _parse_polls(polls_response: list[dict]) -> dict[str, Poll]:
+def _parse_polls(polls_response: list[dict] | dict | None) -> dict[str, Poll | MultilevelPoll]:
+    """Parse the known polls, other polls are ignored."""
     # Polls without votes may come without any <results> element, those are skipped
-    polls = {poll['@name']: poll['results']
-             for poll in _as_list(polls_response) if poll.get('results')}
+    results = {poll['@name']: poll['results']
+               for poll in _as_list(polls_response) if poll.get('results')}
 
-    if 'language_dependence' in polls:
+    polls: dict[str, Poll | MultilevelPoll] = {}
+    if 'language_dependence' in results:
         polls['language_dependence'] = Poll.from_list(
-            _as_list(polls['language_dependence']['result']), '@level', '@numvotes')
-    if 'suggested_numplayers' in polls:
+            _as_list(results['language_dependence']['result']), '@level', '@numvotes')
+    if 'suggested_numplayers' in results:
         polls['suggested_numplayers'] = MultilevelPoll.from_list(
-            [{**results, 'result': _as_list(results['result'])}
-             for results in _as_list(polls['suggested_numplayers'])],
+            [{**numplayers_results, 'result': _as_list(numplayers_results['result'])}
+             for numplayers_results in _as_list(results['suggested_numplayers'])],
             choice_1_key='@numplayers', votes_1_key='result',
             choice_2_key='@value', votes_2_key='@numvotes')
-    if 'suggested_playerage' in polls:
+    if 'suggested_playerage' in results:
         polls['suggested_playerage'] = Poll.from_list(
-            _as_list(polls['suggested_playerage']['result']), '@value', '@numvotes')
+            _as_list(results['suggested_playerage']['result']), '@value', '@numvotes')
 
     return polls
 
@@ -91,7 +102,7 @@ def _community_players(numplayers_poll: MultilevelPoll) -> tuple[Players | None,
             Players.from_values(best) if best else None)
 
 
-def _parse_polls_summary(polls_summary_response: dict) -> dict[str, str]:
+def _parse_polls_summary(polls_summary_response: dict | list[dict]) -> dict[str, Any]:
     if isinstance(polls_summary_response, dict):
         polls_summary_response = [polls_summary_response]
 
@@ -276,8 +287,12 @@ class BggProvider(Cacheable):
             params={'stats': 1})
 
         logger.debug(f"Found game {id}")
+        boardgame_response = xmltodict.parse(response.text)['boardgames']['boardgame']
+        # Unknown ids are answered with 200 and an <error message="Item not found"/> element
+        if 'error' in boardgame_response:
+            raise BggGameNotFoundError([id])
+
         try:
-            boardgame_response = xmltodict.parse(response.text)['boardgames']['boardgame']
 
             name_info = boardgame_response['name']
             if not isinstance(name_info, list):
@@ -297,8 +312,9 @@ class BggProvider(Cacheable):
             # TODO: Readd this
             # poll_summary = _parse_polls_summary(boardgame_response['poll-summary'])
 
-            min_age = MinAge(boardgame_response['age'])
-            # TUNE: It would be better to execute MinAge validation
+            # Values are validated as MinAge, Year... when BGGGame is created, so invalid
+            # ones are discarded here; ValidationError is a ValueError too
+            min_age: int | None = int(boardgame_response['age'])
             if not 0 < min_age:
                 min_age = None
                 logger.warning(f'Unable to obtain min_age for {name}')
@@ -319,27 +335,31 @@ class BggProvider(Cacheable):
 
             published = None
             try:
-                published = Year(boardgame_response['yearpublished'])
-            except ValidationError:
+                published = int(boardgame_response['yearpublished'])
+            except ValueError:
                 logger.warning(f'Unable to obtain year for {name}')
 
             community_min_age = None
-            if 'suggested_playerage' in polls:
+            playerage_poll = polls.get('suggested_playerage')
+            if isinstance(playerage_poll, Poll):
+                poll_values = playerage_poll.winner()
                 try:
-                    poll_values = polls['suggested_playerage'].winner()
-                    community_min_age = MinAge(poll_values)
-                except ValidationError:
+                    # Choices such as '21 and up' are not numbers
+                    community_min_age = int(poll_values)
+                except ValueError:
                     logger.warning(f'Unable to obtain community_min_age with {poll_values} for {name}')
 
             community_players = None
             community_best_players = None
-            if 'suggested_numplayers' in polls:
-                community_players, community_best_players = _community_players(polls['suggested_numplayers'])
+            numplayers_poll = polls.get('suggested_numplayers')
+            if isinstance(numplayers_poll, MultilevelPoll):
+                community_players, community_best_players = _community_players(numplayers_poll)
 
             # from pprint import pprint
             # pprint(boardgame_response)
             ratings = boardgame_response['statistics']['ratings']
-            community_average_weight = ratings['averageweight']
+            # BGG returns 0 as average weight when the game has no weight votes
+            community_average_weight = float(ratings['averageweight']) or None
 
             num_ratings = int(ratings['usersrated'])
 
@@ -378,7 +398,7 @@ class BggProvider(Cacheable):
         logger.info(f"Obtained boardgame {boardgame.name} with id {id}")
         return boardgame
 
-    async def boardgame_by_name(self, name: str) -> BGGGame:
+    async def boardgame_by_name(self, name: str) -> BGGGame | None:
         logger = logging.getLogger('carton.BggProvider.boardgame_by_name')
 
         # TODO: Extract this to a search method
@@ -408,6 +428,24 @@ class BggProvider(Cacheable):
 
         logger.info(f"Obtained {boardgame_id} for '{name}' boardgame")
         return await self.boardgame_by_id(boardgame_id)
+
+    async def boardgames_by_id(self, ids: Iterable[int]) -> list[BGGGame]:
+        """Return the games with the given ids, in the same order and without duplicates.
+
+        Raises BggGameNotFoundError with all unknown ids if any of them does not exist.
+        """
+        ids = list(dict.fromkeys(ids))
+        results = await asyncio.gather(*(self.boardgame_by_id(id) for id in ids), return_exceptions=True)
+
+        not_found = [id for id, result in zip(ids, results) if isinstance(result, BggGameNotFoundError)]
+        if not_found:
+            raise BggGameNotFoundError(not_found)
+        games = []
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+            games.append(result)
+        return games
 
     async def _user_collection_ids(self, user: str) -> list[int]:
         # BGG returns expansions with subtype 'boardgame' unless they are explicitly

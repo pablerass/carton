@@ -9,6 +9,7 @@ from carton.models.params import PlayersInterval
 from carton.models.poll import MultilevelPoll, Poll
 from carton.providers.bgg_provider import (
     BGG_API_URLS,
+    BggGameNotFoundError,
     BggProvider,
     BggUserNotFoundError,
     _parse_polls,
@@ -497,3 +498,54 @@ async def test_user_collection_cached_games_are_not_rate_limited(httpx_mock):
 
     assert second == first
     assert len(httpx_mock.get_requests()) == 2 + len(ids) + 2
+
+
+NOT_FOUND_XML = """<?xml version="1.0" encoding="utf-8"?>
+<boardgames termsofuse="https://boardgamegeek.com/xmlapi/termsofuse">
+  <boardgame>
+    <error message="Item not found"/>
+  </boardgame>
+</boardgames>
+"""
+
+
+async def test_boardgame_by_id_not_found(httpx_mock):
+    httpx_mock.add_response(url=_boardgame_url(1), text=NOT_FOUND_XML)
+
+    async with BggProvider() as bgg:
+        with pytest.raises(BggGameNotFoundError) as error:
+            await bgg.boardgame_by_id(1)
+
+    assert error.value.ids == [1]
+
+
+async def test_boardgame_by_id_without_weight(httpx_mock):
+    # Games without weight votes have 0 as average weight
+    httpx_mock.add_response(url=_boardgame_url(1), text=_boardgame_xml(1))
+
+    async with BggProvider() as bgg:
+        boardgame = await bgg.boardgame_by_id(1)
+
+    assert boardgame.community_average_weight is None
+
+
+async def test_boardgames_by_id(httpx_mock):
+    for id in (1, 2):
+        httpx_mock.add_response(url=_boardgame_url(id), text=_boardgame_xml(id))
+
+    async with BggProvider() as bgg:
+        boardgames = await bgg.boardgames_by_id([2, 1, 2])
+
+    assert [b.bgg_id for b in boardgames] == [2, 1]
+
+
+async def test_boardgames_by_id_not_found(httpx_mock):
+    httpx_mock.add_response(url=_boardgame_url(1), text=_boardgame_xml(1))
+    for id in (2, 3):
+        httpx_mock.add_response(url=_boardgame_url(id), text=NOT_FOUND_XML)
+
+    async with BggProvider() as bgg:
+        with pytest.raises(BggGameNotFoundError) as error:
+            await bgg.boardgames_by_id([1, 2, 3])
+
+    assert error.value.ids == [2, 3]

@@ -1,5 +1,5 @@
 from carton.models.boardgame import BoardGame, Designer
-from carton.models.params import MinAge, Players, PlayersInterval, PlayTime
+from carton.models.params import Players, PlayersInterval, PlayTime
 
 # from sqlmodel import select
 
@@ -10,7 +10,7 @@ def test_board_game():
     boardgame_1 = BoardGame(
         name="Rebirth",
         designers=[designer],
-        min_age=MinAge(10),
+        min_age=10,
         players=Players(intervals=[PlayersInterval(lower=2, upper=4)]),
         play_time=PlayTime(lower=45, upper=60)
     )
@@ -21,14 +21,14 @@ def test_board_game():
     boardgame_2 = BoardGame(
         name="Ra",
         designers=[designer],
-        min_age=MinAge(12),
+        min_age=12,
         players=Players(intervals=[PlayersInterval(lower=2, upper=5)]),
         play_time=PlayTime(lower=45, upper=60),
     )
 
     assert boardgame_2.name == "Ra"
     assert boardgame_2.designers & boardgame_1.designers
-    assert boardgame_2.min_age == MinAge(12)
+    assert boardgame_2.min_age == 12
 
     assert designer.boardgames == {boardgame_1, boardgame_2}
 
@@ -38,19 +38,19 @@ def test_board_game():
 #     boardgame_1 = BoardGame(
 #         name="Ra",
 #         designers=[designer],
-#         min_age=MinAge(10),
+#         min_age=10,
 #         players=Players(lower=2, upper=4),
 #         play_time=PlayTime(lower=45, upper=60))
 #     boardgame_2 = BoardGame(
 #         name="Rebirth",
 #         designers=[designer],
-#         min_age=MinAge(10),
+#         min_age=10,
 #         players=Players(lower=2, upper=4),
 #         play_time=PlayTime(lower=45, upper=60))
 #     boardgame_3 = BoardGame(
 #         name="Pelusas",
 #         designers=[designer],
-#         min_age=MinAge(8),
+#         min_age=8,
 #         players=Players(lower=2, upper=5),
 #         play_time=PlayTime(lower=20, upper=20))
 #

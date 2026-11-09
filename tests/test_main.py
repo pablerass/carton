@@ -7,7 +7,7 @@ import pytest
 import carton.__main__ as carton_main
 from carton.models.boardgame import BGGDesigner, BGGGame
 from carton.models.params import Players, PlayTime
-from carton.providers import BggUserNotFoundError
+from carton.providers import BggGameNotFoundError, BggUserNotFoundError
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +71,7 @@ class FakeProvider:
     def __init__(self):
         self.api_keys = []
         self.users = []
+        self.requested_ids = []
         self.closed = []
         self.error: Exception | None = None
 
@@ -85,6 +86,12 @@ class FakeProvider:
 
     async def user_collection(self, user):
         self.users.append(user)
+        if self.error:
+            raise self.error
+        return _games()
+
+    async def boardgames_by_id(self, ids):
+        self.requested_ids.append(list(ids))
         if self.error:
             raise self.error
         return _games()
@@ -128,3 +135,116 @@ def test_main_collection_unknown_user(fake_provider, capsys):
 
     assert carton_main.main(["collection", "alice", "--bgg-api-key", "key"]) == 1
     assert capsys.readouterr().out == ""
+
+
+# recommend
+
+RECOMMEND_ARGS = ["--players", "3", "--time", "120", "--bgg-api-key", "key"]
+
+
+def test_parse_args_recommend(monkeypatch):
+    monkeypatch.setenv("BGG_USER", "alice")
+
+    args = carton_main.parse_args(["recommend", *RECOMMEND_ARGS])
+
+    assert args.user == "alice"
+    assert args.games_file is None
+    assert (args.players, args.time, args.complexity, args.limit) == (3, 120, None, 10)
+
+
+def test_parse_args_recommend_games_file_does_not_use_bgg_user(monkeypatch):
+    monkeypatch.setenv("BGG_USER", "alice")
+
+    args = carton_main.parse_args(["recommend", "--games-file", "games.txt", *RECOMMEND_ARGS])
+
+    assert args.user is None
+    assert args.games_file == "games.txt"
+
+
+@pytest.mark.parametrize('args', [
+    ["recommend", *RECOMMEND_ARGS],  # No user nor games file
+    ["recommend", "bob", "--games-file", "games.txt", *RECOMMEND_ARGS],  # Both user and games file
+    ["recommend", "bob", "--time", "120", "--bgg-api-key", "key"],  # No players
+    ["recommend", "bob", "--players", "3", "--bgg-api-key", "key"],  # No time
+    ["recommend", "bob", *RECOMMEND_ARGS, "--complexity", "6"],
+    ["recommend", "bob", *RECOMMEND_ARGS, "--players", "0"],
+    ["recommend", "bob", *RECOMMEND_ARGS, "--limit", "0"],
+    ["recommend", "bob", "--players", "3", "--time", "120"],  # No authentication
+])
+def test_parse_args_recommend_invalid(args):
+    with pytest.raises(SystemExit):
+        carton_main.parse_args(args)
+
+
+@pytest.mark.parametrize('content', [
+    "13\n\n# A comment\n230802\n",
+    "name,bgg_id,players\nCatan,13,3-4\nAzul,230802,\"2, 3\"\n",
+    "[13, 230802]",
+    '[{"name": "Catan", "bgg_id": 13}, {"name": "Azul", "bgg_id": 230802}]',
+])
+def test_read_game_ids(content):
+    assert carton_main.read_game_ids(io.StringIO(content)) == [13, 230802]
+
+
+def test_main_recommend_user_collection(fake_provider, capsys):
+    assert carton_main.main(["recommend", "alice", *RECOMMEND_ARGS]) == 0
+    assert fake_provider.users == ["alice"]
+    assert fake_provider.closed == [True]
+
+    [row] = list(csv.DictReader(io.StringIO(capsys.readouterr().out)))
+    assert row["name"] == "Catan"
+    assert row["bgg_id"] == "13"
+    assert 0 < float(row["score"]) <= 1
+
+
+def test_main_recommend_games_file(fake_provider, tmp_path):
+    games_file = tmp_path / "games.txt"
+    games_file.write_text("13\n13\n")
+    output = tmp_path / "recommendations.json"
+
+    assert carton_main.main(["recommend", "--games-file", str(games_file), *RECOMMEND_ARGS,
+                             "--format", "json", "--output", str(output)]) == 0
+    assert fake_provider.requested_ids == [[13, 13]]
+
+    [recommendation] = json.loads(output.read_text())
+    assert recommendation["game"]["name"] == "Catan"
+
+
+def test_main_recommend_games_not_playable(fake_provider, capsys):
+    # Catan is for 3-4 players
+    assert carton_main.main(["recommend", "alice", *RECOMMEND_ARGS, "--players", "2"]) == 0
+
+    assert list(csv.DictReader(io.StringIO(capsys.readouterr().out))) == []
+
+
+@pytest.mark.parametrize('content', ["", "not an id\n"])
+def test_main_recommend_invalid_games_file(fake_provider, tmp_path, content):
+    games_file = tmp_path / "games.txt"
+    games_file.write_text(content)
+
+    assert carton_main.main(["recommend", "--games-file", str(games_file), *RECOMMEND_ARGS]) == 1
+    assert fake_provider.requested_ids == []
+
+
+def test_main_recommend_missing_games_file(fake_provider, tmp_path):
+    assert carton_main.main(["recommend", "--games-file", str(tmp_path / "missing.txt"), *RECOMMEND_ARGS]) == 1
+
+
+@pytest.mark.parametrize('error', [BggUserNotFoundError("alice"), BggGameNotFoundError([13])])
+def test_main_recommend_not_found(fake_provider, capsys, error):
+    fake_provider.error = error
+
+    assert carton_main.main(["recommend", "alice", *RECOMMEND_ARGS]) == 1
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize('output_format', carton_main.OUTPUT_FORMATS)
+def test_read_game_ids_from_collection_output(output_format):
+    # 'recommend' reads the files written by 'collection' in every output format
+    games = [*_games(), BGGGame(name="Azul", bgg_id=230802, designers={BGGDesigner(name="Michael Kiesling", bgg_id=7),
+                                                                       BGGDesigner(name="Other, Designer", bgg_id=8)})]
+    output = io.StringIO()
+    carton_main.write_collection(games, output, output_format)
+    output.seek(0)
+
+    assert carton_main.read_game_ids(output) == [13, 230802]

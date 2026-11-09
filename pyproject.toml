@@ -24,7 +24,6 @@ dependencies = [
   "fastapi",
   "aiohttp",
   "httpx2",
-  "sqlmodel",
   "pydantic",
   "xmltodict",
   "uvicorn",
@@ -44,8 +43,8 @@ test = [
   "coverage",
   "types-setuptools",
   "types-xmltodict",
-  "ty",
-  "ruff",
+  "ty>=0.0.99",
+  "ruff>=0.17.4",
 ]
 dev = [
   {include-group = "test"},

@@ -46,6 +46,23 @@ collection is written as CSV to standard output. Use `--format json` to get
 JSON and `--output <file>` to write it to a file. Run `uv run carton --help` or
 `uv run carton <command> --help` for all options.
 
+To get the best games to play for a number of players, an available time in
+minutes and an optional complexity (BGG weight, from 1 to 5), from the
+collection of a user or from a file of BGG ids:
+
+```sh
+uv run carton recommend <user> --players 4 --time 90 --complexity 2.5
+uv run carton recommend --games-file games.txt --players 4 --time 90
+```
+
+The games file contains one BGG id per line, or is a CSV or JSON written by
+`carton collection`. Games are scored from 0 to 1, best first, by how well they
+play with that number of players according to the BGG community, how well they
+fit the time, how close their weight is to the requested complexity and their
+BGG rating. Expansions, and games that can't be played with that number of
+players or in that time, are not recommended. Use `--limit` to change the
+number of games returned (10 by default).
+
 To install the command globally as a tool:
 
 ```sh
@@ -67,6 +84,11 @@ Endpoints:
 | Endpoint                         | Command                       | Description                                       |
 |----------------------------------|-------------------------------|---------------------------------------------------|
 | `GET /users/{username}/collection` | `carton collection <username>` | All games and expansions owned by a BGG user, 404 if the user does not exist |
+| `POST /recommend`                | `carton recommend --games-file <file>` | Best games to play from a list of BGG ids, 404 if any game does not exist |
+
+`POST /recommend` receives a JSON body such as
+`{"players": 4, "time": 90, "complexity": 2.5, "games": [13, 822, 230802], "limit": 10}`,
+where `complexity` and `limit` are optional.
 
 Interactive documentation is available at `http://127.0.0.1:8000/docs`.
 

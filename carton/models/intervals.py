@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, Self, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 
 @runtime_checkable
 class Orderable(Protocol):
-    def __lt__(self, other: object, /) -> bool: ...
-    def __le__(self, other: object, /) -> bool: ...
-    def __gt__(self, other: object, /) -> bool: ...
-    def __ge__(self, other: object, /) -> bool: ...
+    # Any, as builtins only accept their own type, e.g. int.__lt__(self, other: int)
+    def __lt__(self, other: Any, /) -> bool: ...
+    def __le__(self, other: Any, /) -> bool: ...
+    def __gt__(self, other: Any, /) -> bool: ...
+    def __ge__(self, other: Any, /) -> bool: ...
 
 
 class Interval[T: Orderable](BaseModel):
@@ -42,7 +43,7 @@ class Interval[T: Orderable](BaseModel):
         return interval
 
     @classmethod
-    def from_list(cls, items: Sequence[T]) -> Interval[T]:
+    def from_list(cls, items: Sequence[T]) -> Self:
         return cls(lower=min(items), upper=max(items))
 
 
@@ -58,5 +59,5 @@ class Intervals[T: Orderable](BaseModel):
         return ', '.join([str(interval) for interval in self.intervals])
 
     @classmethod
-    def from_list(cls, items: Sequence[Sequence[T]]) -> Intervals[T]:
+    def from_list(cls, items: Sequence[Sequence[T]]) -> Self:
         return cls(intervals=[Interval.from_list(interval_items) for interval_items in items])
