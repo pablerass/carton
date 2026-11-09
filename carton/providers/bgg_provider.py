@@ -3,7 +3,7 @@ import logging
 from collections import namedtuple
 from typing import Self
 
-import httpx
+import httpx2
 import xmltodict
 from cartucho import Cacheable, ReturnCache, cached_method
 from pydantic import ValidationError
@@ -125,7 +125,7 @@ class BggProvider(Cacheable):
         # Stored auth cookies after successful authentication (None if not authenticated)
         self.__auth_cookies: dict | None = None
         self.__auth_headers: dict | None = None
-        self.__client: httpx.AsyncClient | None = None
+        self.__client: httpx2.AsyncClient | None = None
 
         # Request rate limit, see _throttle
         self.__requests_semaphore = asyncio.Semaphore(BGG_MAX_CONCURRENT_REQUESTS)
@@ -154,15 +154,15 @@ class BggProvider(Cacheable):
 
         Sends a JSON payload {"credentials": {"username": username, "password": password}}
         to the BGG login endpoint and stores returned cookies in `self._auth_cookies`.
-        Raises httpx.HTTPStatusError on non-2xx responses or ValueError if the login is rejected.
+        Raises httpx2.HTTPStatusError on non-2xx responses or ValueError if the login is rejected.
         """
         logger = logging.getLogger('carton.BggProvider.login')
 
-        with httpx.Client() as client:
+        with httpx2.Client() as client:
             response = client.post(BGG_LOGIN_URL, json={"credentials": {"username": username, "password": password}})
             try:
                 response.raise_for_status()
-            except httpx.HTTPStatusError:
+            except httpx2.HTTPStatusError:
                 logger.error(f"Authentication request failed with status {response.status_code}: {response.text[:200]}")
                 raise
 
@@ -199,14 +199,14 @@ class BggProvider(Cacheable):
         return self.__auth_headers
 
     @property
-    def _client(self) -> httpx.AsyncClient:
+    def _client(self) -> httpx2.AsyncClient:
         """Shared HTTP client, so all requests reuse the same connection pool.
 
         The client is created on first use and the current auth is added on every
         access, so a later login applies to it. Logout removes it in `logout`.
         """
         if self.__client is None:
-            self.__client = httpx.AsyncClient()
+            self.__client = httpx2.AsyncClient()
 
         if self._auth_headers:
             self.__client.headers.update(self._auth_headers)
@@ -229,7 +229,7 @@ class BggProvider(Cacheable):
 
     async def _get(self, url: str, params: dict | None = None,
                    retries: int = BGG_ACCEPTED_RETRIES,
-                   delay: float = BGG_ACCEPTED_DELAY) -> httpx.Response:
+                   delay: float = BGG_ACCEPTED_DELAY) -> httpx2.Response:
         """GET a BGG API URL, retrying with exponential backoff while BGG answers 202 Accepted.
 
         BGG returns 202 when a request has been queued for processing (e.g. large

@@ -23,7 +23,7 @@ dependencies = [
   "cartucho",
   "fastapi",
   "aiohttp",
-  "httpx",
+  "httpx2",
   "sqlmodel",
   "pydantic",
   "xmltodict",
@@ -39,7 +39,6 @@ carton = "carton.__main__:main"
 [dependency-groups]
 test = [
   "pytest",
-  "pytest-httpx",
   "pytest-asyncio",
   "pytest-unordered",
   "coverage",

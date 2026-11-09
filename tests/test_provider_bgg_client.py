@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 
 from carton.providers.bgg_provider import BGG_API_URLS, BggProvider
@@ -35,7 +35,7 @@ async def test_get_raises_on_error_status(httpx_mock):
     httpx_mock.add_response(url=HOT_URL, status_code=500)
 
     async with BggProvider() as bgg:
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(httpx2.HTTPStatusError):
             await bgg._get(HOT_URL)
 
 

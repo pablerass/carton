@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-import httpx
+import httpx2
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from . import __version__
@@ -60,6 +60,6 @@ async def user_collection(username: str, bgg: Annotated[BggProvider, Depends(get
         raise HTTPException(status_code=404, detail=f"BoardGameGeek user '{username}' not found")
     except TimeoutError:
         raise HTTPException(status_code=504, detail="BoardGameGeek kept the request queued, try again later")
-    except httpx.HTTPError as error:
+    except httpx2.HTTPError as error:
         logger.error(f"Error obtaining {username} collection from BoardGameGeek: {error}")
         raise HTTPException(status_code=502, detail="Error obtaining the collection from BoardGameGeek")

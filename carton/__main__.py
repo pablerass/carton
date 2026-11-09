@@ -132,8 +132,8 @@ def main(args: list[str] | None = None) -> int:
     logging.basicConfig(stream=sys.stderr, format=logging_format,
                         level=logging.WARNING - parsed_args.verbose * 10)
     if parsed_args.verbose < 4:
-        logging.getLogger('httpcore').propagate = False
-        logging.getLogger('httpx').propagate = False
+        logging.getLogger('httpcore2').propagate = False
+        logging.getLogger('httpx2').propagate = False
 
     match parsed_args.command:
         case 'collection':

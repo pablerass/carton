@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
@@ -103,7 +103,7 @@ def test_user_collection(client, provider):
 @pytest.mark.parametrize('error, status_code', [
     (BggUserNotFoundError("alice"), 404),
     (TimeoutError(), 504),
-    (httpx.ConnectError("unreachable"), 502),
+    (httpx2.ConnectError("unreachable"), 502),
 ])
 def test_user_collection_errors(client, provider, error, status_code):
     provider.collection_result = error

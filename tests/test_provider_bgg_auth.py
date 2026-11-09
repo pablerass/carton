@@ -1,5 +1,5 @@
 import pytest
-from httpx import HTTPStatusError
+from httpx2 import HTTPStatusError
 
 from carton.providers.bgg_provider import BGG_LOGIN_URL, BggProvider
 
